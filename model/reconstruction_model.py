@@ -81,7 +81,7 @@ class VST3DDecoder(nn.Module):
                                output_padding=(1, 1, 1)),
             nn.BatchNorm3d(feature_num_x2),
             nn.LeakyReLU(0.2, inplace=True),
-            # (4,256,4,16,16)
+            # (4,256,8,16,16)
             nn.ConvTranspose3d(feature_num_x2, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
                                output_padding=(1, 1, 1)),
             nn.BatchNorm3d(feature_num_x2),

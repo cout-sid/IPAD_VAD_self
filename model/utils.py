@@ -30,7 +30,7 @@ def np_load_frame(filename, resize_height, resize_width, grayscale=False):
     image_resized = image_resized.astype(dtype=np.float32)
     image_resized = (image_resized / 127.5) - 1.0
     return image_resized
-
+# shape => (h,w,3)
 
 
 class Reconstruction3DDataLoader(data.Dataset):
@@ -57,7 +57,9 @@ class Reconstruction3DDataLoader(data.Dataset):
         videos = glob.glob(os.path.join(self.dir, '*/'))
         for video in sorted(videos):
             print(video)
-            video_name = video.split('/')[-2]
+
+            video_name = video.split('\\')[-2]
+            
             self.videos[video_name] = {}
             self.videos[video_name]['path'] = video
             self.videos[video_name]['frame'] = glob.glob(os.path.join(video, '*' + self.extension))
@@ -69,7 +71,7 @@ class Reconstruction3DDataLoader(data.Dataset):
         background_models = []
         videos = glob.glob(os.path.join(self.dir, '*/'))
         for video in sorted(videos):
-            video_name = video.split('/')[-2]
+            video_name = video.split('\\')[-2]
 
             for i in range(len(self.videos[video_name]['frame']) - self._num_frames + 1):
                 frames.append(self.videos[video_name]['frame'][i])
@@ -79,18 +81,23 @@ class Reconstruction3DDataLoader(data.Dataset):
 
     def __getitem__(self, index):
         # index = 8
-        video_name = self.samples[index].split('/')[-2]
+        video_name = self.samples[index].split('\\')[-2]
         if self.dataset == 'shanghai' and 'training' in self.samples[index]:
-            frame_name = int(self.samples[index].split('/')[-1].split('.')[-2]) - 1
+            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
         else:
-            frame_name = int(self.samples[index].split('/')[-1].split('.')[-2])
+            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
 
         batch = []
         for i in range(self._num_frames):
             image = np_load_frame(self.videos[video_name]['frame'][frame_name + i], self._resize_height,
                                   self._resize_width, grayscale=True)
+# np_load_frame returns shape => (h,w,3)
+            
             if self.transform is not None:
                 batch.append(self.transform(image))
+# no automatic scaling normally we scale (0,255)=>(0.0,1.0) but 
+# np_load_frame scaled it already to (-1.0,1.0) which is float so transform doesn't scale it now
+
         # batch:len=16 ,batch[0]:torch(3,256,256)
         img = OrderedDict()
         img['batch'] = np.stack(batch, axis=1)
@@ -105,11 +112,11 @@ class Reconstruction3DDataLoader(data.Dataset):
 class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
     def __getitem__(self, index):
         # index = 8
-        video_name = self.samples[index].split('/')[-2]
+        video_name = self.samples[index].split('\\')[-2]
         if self.dataset == 'shanghai' and 'training' in self.samples[index]:  # bcos my shanghai's start from 1
-            frame_name = int(self.samples[index].split('/')[-1].split('.')[-2]) - 1
+            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
         else:
-            frame_name = int(self.samples[index].split('/')[-1].split('.')[-2])
+            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
 
         batch = []
         normal_batch = []

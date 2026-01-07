@@ -28,13 +28,39 @@ class MemoryUnit(nn.Module):
     def forward(self, input, period_score):
         # print(input.shape)
         score,indices = torch.max(period_score,dim=1)
-        indices = (torch.floor((indices/126)*self.mem_dim).cpu().numpy()).astype(int)
+        indices = (torch.floor((indices/200)*self.mem_dim).cpu().numpy()).astype(int) # earlier using 126 instead of 200 which is wrong
+        
         # # print(indices)
         att_weight = F.linear(input, self.weight)  # Fea x Mem^T, (TxC) x (CxM) = TxM
-        a = score[i]
-        att_weight[:,indices[i]-7:indices[i]+8]=att_weight[:,indices[i]-7:indices[i]+8]+att_weight[:,indices[i]-7:indices[i]+8].clone()*score[i]
-        att_weight = F.softmax(att_weight, dim=1)  # TxM
-        # print(att_weight.shape)
+
+
+        # a = score[i]
+        # att_weight[:,indices[i]-7:indices[i]+8]=att_weight[:,indices[i]-7:indices[i]+8]+att_weight[:,indices[i]-7:indices[i]+8].clone()*score[i]
+        # att_weight = F.softmax(att_weight, dim=1)  # TxM
+
+        B = period_score.shape[0]
+        P = att_weight.shape[0] // B
+        att_weight = att_weight.view(B, P, -1) 
+
+        for b in range(B):
+            idx = indices[b]
+            s = score[b]
+            # Boost only the b-th item in the batch
+            start = max(0, idx - 7)
+            end = min(self.mem_dim, idx + 8)
+        
+            # Apply the boost specifically to batch 'b'
+            att_weight[b, :, start:end] += att_weight[b, :, start:end].clone() * s
+        
+        # Flatten back to original shape for the rest of the logic
+        att_weight = att_weight.view(-1, self.mem_dim)
+        att_weight = F.softmax(att_weight, dim=1)
+
+        #  when using softmax with dim=1
+        # Sample 1	2.0	1.0	0.1     ======>   0.65	0.24	0.11  (sums to 1)
+        # Sample 2	0.5	0.5	0.5     ======>   0.33	0.33	0.33  (sums to 1) 
+
+        print(att_weight.shape)
         # print(period_score.shape)
         # ReLU based shrinkage, hard shrinkage for positive value
         if(self.shrink_thres>0):
@@ -42,6 +68,11 @@ class MemoryUnit(nn.Module):
             # att_weight = F.softshrink(att_weight, lambd=self.shrink_thres)
             # normalize???
             att_weight = F.normalize(att_weight, p=1, dim=1)
+
+            # L1 Normalization (p=1) re-scales the surviving weights so they sum back up to 1.0.
+            # This ensures that the "brightness" of your reconstructed image stays consistent and doesn't get darker just
+            # because you filtered the noise.
+
             # att_weight = F.softmax(att_weight, dim=1)
             # att_weight = self.hard_sparse_shrink_opt(att_weight)
         
@@ -109,4 +140,10 @@ class MemModule(nn.Module):
 def hard_shrink_relu(input, lambd=0, epsilon=1e-12):
     output = (F.relu(input-lambd) * input) / (torch.abs(input - lambd) + epsilon)
     return output
+
+# Abnormal Data: When the model sees an anomaly, it doesn't find a good match in memory. It tries to "cheat" by combining
+# many different memory items with very small weights to try and recreate the strange image.
+
+# The "Hard Shrink": By zeroing out those small weights, you prevent the model from successfully reconstructing the anomaly.
+# This makes the Reconstruction Error much higher for anomalies, making them easier to detect.
 

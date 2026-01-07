@@ -1,0 +1,4 @@
+No CUDA detected. Using CPU.
+0
+No CUDA detected. Using CPU.
+0

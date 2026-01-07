@@ -20,7 +20,7 @@ class VST(torch.nn.Module):
             nn.Conv3d(768, 768, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1)),
             nn.BatchNorm3d(768),
             nn.LeakyReLU(0.2, inplace=True),
-            # (batch_size,256,4,4,4)
+            # (batch_size,768,4,4,4)
             nn.Flatten(1),
             nn.Linear(768*4*4*4,4096),
             nn.ReLU(),

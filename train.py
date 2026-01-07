@@ -6,14 +6,16 @@ from model.utils import Reconstruction3DDataLoader, Reconstruction3DDataLoaderJu
 from model.autoencoder import *
 from model.video_swin_transformer import *
 from utils import *
-from model.pseudoanomaly_utils import create_pseudoanomaly_cifar_smooth, \
-    create_pseudoanomaly_cifar_smoothborder, create_pseudoanomaly_seq_smoothborder, \
-    create_pseudoanomaly_cifar_cutmix, create_pseudoanomaly_cifar_mixupcutmix
+# from model.pseudoanomaly_utils import create_pseudoanomaly_cifar_smooth, \
+#     create_pseudoanomaly_cifar_smoothborder, create_pseudoanomaly_seq_smoothborder, \
+#     create_pseudoanomaly_cifar_cutmix, create_pseudoanomaly_cifar_mixupcutmix
 
 import time
 from model import EntropyLossEncap
 
 import argparse
+
+# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --epochs 2 --num_workers 0
 
 parser = argparse.ArgumentParser(description="STEAL Net")
 parser.add_argument('--model', type=str, default='VST', choices=['VST','conAE'])
@@ -23,7 +25,7 @@ parser.add_argument('--h', type=int, default=256, help='height of input images')
 parser.add_argument('--w', type=int, default=256, help='width of input images')
 parser.add_argument('--lr', type=float, default=1e-4, help='initial learning rate phase 1')
 parser.add_argument('--num_workers', type=int, default=2, help='number of workers for the train loader')
-parser.add_argument('--dataset_type', type=str, default='ped2', choices=['ped2','avenue', 'shanghai','SW_video','VAD'], help='type of dataset: ped2, avenue, shanghai')
+parser.add_argument('--dataset_type', type=str, default='ped2', choices=['ped2','avenue', 'shanghai','SW_video','VAD','IPAD'], help='type of dataset: ped2, avenue, shanghai')
 parser.add_argument('--dataset_path', type=str, default='dataset', help='directory of data')
 parser.add_argument('--exp_dir', type=str, default='log', help='basename of folder to save weights')
 
@@ -56,7 +58,8 @@ parser.add_argument('--Period_Loss_Weight', type=float, default=0.02, help='peri
 args = parser.parse_args()
 entropy_loss_weight = args.Entropy_Loss_Weight
 period_loss_weight = args.Period_Loss_Weight
-device = torch.device("cuda")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 tr_entropy_loss_func = EntropyLossEncap().to(device)
 # assert 1 not in args.jump
 
@@ -108,16 +111,19 @@ exp_dir += '-' + str(args.max_move) if args.pseudo_anomaly_imagenet_inpainting_s
 
 print('exp_dir: ', exp_dir)
 
-torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational performance
+# torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational performance
+# FIX ME FIX ME
 
-train_folder = os.path.join(args.dataset_path, args.dataset_type, 'training', 'frames')
+# train_folder = os.path.join(args.dataset_path, args.dataset_type, 'training', 'frames')
+train_folder = os.path.join(args.dataset_path, 'training', 'frames')
+
 
 # Loading dataset
 img_extension = '.tif' if args.dataset_type == 'ped1' else '.jpg'
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
                                            resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, img_extension=img_extension)
-train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
-                                                resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, jump=args.jump, return_normal_seq=args.pseudo_anomaly_jump_inpainting > 0, img_extension=img_extension)
+# train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
+#                                                 resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, jump=args.jump, return_normal_seq=args.pseudo_anomaly_jump_inpainting > 0, img_extension=img_extension)
 
 # if args.pseudo_anomaly_cifar_inpainting_smooth > 0 or args.pseudo_anomaly_cifar_inpainting_smoothborder > 0 or args.pseudo_anomaly_cifar_inpainting_cutmix > 0 or args.pseudo_anomaly_cifar_inpainting_mixupcutmix > 0 :
 #     # cifar_transform = transforms.Compose([
@@ -192,8 +198,8 @@ train_size = len(train_dataset)
 
 train_batch = data.DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=args.num_workers, drop_last=True)
-train_batch_jump = data.DataLoader(train_dataset_jump, batch_size=args.batch_size,
-                                   shuffle=True, num_workers=args.num_workers, drop_last=True)
+# train_batch_jump = data.DataLoader(train_dataset_jump, batch_size=args.batch_size,
+#                                    shuffle=True, num_workers=args.num_workers, drop_last=True)
 
 # Report the training process
 log_dir = os.path.join('./exp', args.dataset_type, exp_dir)
@@ -214,8 +220,23 @@ if args.start_epoch < args.epochs:
         model = VST()
     else:
         model = convAE()
-    model = nn.DataParallel(model)
-    model.cuda()
+    
+    if torch.cuda.is_available():
+    # Check how many GPUs are actually available
+        device_count = torch.cuda.device_count()
+        if device_count > 1:
+            print(f"Using {device_count} GPUs with DataParallel")
+            model = nn.DataParallel(model)
+        else:
+            print("Using 1 GPU (No DataParallel)")
+    
+        model.cuda() # Moves model to GPU
+    else:
+        print("No CUDA detected. Using CPU.")
+        model.cpu() # Moves model to CPU
+
+    # model = nn.DataParallel(model)
+    # model.cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # resume
@@ -226,7 +247,8 @@ if args.start_epoch < args.epochs:
         model_weight = model_dict['model']
         model.load_state_dict(model_weight.state_dict())
         optimizer.load_state_dict(model_dict['optimizer'])
-        model.cuda()
+        # model.cuda()
+        model.to(device)
 
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
@@ -236,12 +258,16 @@ if args.start_epoch < args.epochs:
         pseudolosscounter = 0
         losscounter = 0
 
-        for j, (imgs, imgsjump) in enumerate(zip(train_batch, train_batch_jump)):
+        # for j, (imgs, imgsjump) in enumerate(zip(train_batch, train_batch_jump)):
+        for j, imgs in enumerate(train_batch):
+
             #imgs (batch_size,3,16,H,W)
             net_in = copy.deepcopy(imgs['batch'])
-            net_in = net_in.cuda()
+            # net_in = net_in.cuda()
+            net_in = net_in.to(device)
             img_index = copy.deepcopy(imgs['index'])
-            img_index = img_index.cuda()
+            # img_index = img_index.cuda()
+            img_index = img_index.to(device)
             # len=batch_size index
 
             jump_inpainting_pseudo_stat = []
@@ -477,11 +503,12 @@ if args.start_epoch < args.epochs:
             entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
             entropy_loss_val = entropy_loss.item()
             loss_entropy = entropy_loss_weight * entropy_loss
-            cls_labels = torch.Tensor(cls_labels).unsqueeze(1).cuda()
+            cls_labels = torch.Tensor(cls_labels).unsqueeze(1).to(device)
             #recon loss
             loss_mse = loss_func_mse(outputs, net_in)
             #period loss
             loss_period = F.cross_entropy(recon_index,img_index)
+
             
             loss_period = loss_period * period_loss_weight
 
@@ -525,8 +552,8 @@ if args.start_epoch < args.epochs:
 
         print('----------------------------------------')
         print('Epoch:', epoch)
-        if pseudolosscounter != 0:
-            print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
+        # if pseudolosscounter != 0:
+        #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
             print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
 
