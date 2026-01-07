@@ -58,7 +58,8 @@ class Reconstruction3DDataLoader(data.Dataset):
         for video in sorted(videos):
             print(video)
 
-            video_name = video.split('\\')[-2]
+            # video_name = video.split('\\')[-2]
+            video_name = os.path.basename(os.path.normpath(video))
             
             self.videos[video_name] = {}
             self.videos[video_name]['path'] = video
@@ -71,7 +72,8 @@ class Reconstruction3DDataLoader(data.Dataset):
         background_models = []
         videos = glob.glob(os.path.join(self.dir, '*/'))
         for video in sorted(videos):
-            video_name = video.split('\\')[-2]
+            # video_name = video.split('\\')[-2]
+            video_name = os.path.basename(os.path.normpath(video))
 
             for i in range(len(self.videos[video_name]['frame']) - self._num_frames + 1):
                 frames.append(self.videos[video_name]['frame'][i])
@@ -81,11 +83,23 @@ class Reconstruction3DDataLoader(data.Dataset):
 
     def __getitem__(self, index):
         # index = 8
-        video_name = self.samples[index].split('\\')[-2]
+        # video_name = self.samples[index].split('\\')[-2]
+        # if self.dataset == 'shanghai' and 'training' in self.samples[index]:
+        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
+        # else:
+        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
+
+        video_name = os.path.basename(os.path.normpath(self.samples[index]))
+        filename = os.path.basename(self.samples[index])
+
+        # Split by '.' and get the number part (e.g., '001')
+        # This works for '001.jpg' -> ['001', 'jpg'] -> '001'
+        frame_number_str = filename.split('.')[-2]
+
         if self.dataset == 'shanghai' and 'training' in self.samples[index]:
-            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
+            frame_name = int(frame_number_str) - 1
         else:
-            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
+            frame_name = int(frame_number_str)
 
         batch = []
         for i in range(self._num_frames):
@@ -112,11 +126,24 @@ class Reconstruction3DDataLoader(data.Dataset):
 class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
     def __getitem__(self, index):
         # index = 8
-        video_name = self.samples[index].split('\\')[-2]
-        if self.dataset == 'shanghai' and 'training' in self.samples[index]:  # bcos my shanghai's start from 1
-            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
+        # video_name = self.samples[index].split('\\')[-2]
+        # if self.dataset == 'shanghai' and 'training' in self.samples[index]:  # bcos my shanghai's start from 1
+        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
+        # else:
+        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
+
+        video_name = os.path.basename(os.path.normpath(self.samples[index]))
+        filename = os.path.basename(self.samples[index])
+
+        # Split by '.' and get the number part (e.g., '001')
+        # This works for '001.jpg' -> ['001', 'jpg'] -> '001'
+        frame_number_str = filename.split('.')[-2]
+
+        if self.dataset == 'shanghai' and 'training' in self.samples[index]:
+            frame_name = int(frame_number_str) - 1
         else:
-            frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
+            frame_name = int(frame_number_str)
+
 
         batch = []
         normal_batch = []
