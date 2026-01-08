@@ -263,9 +263,11 @@ if args.start_epoch < args.epochs:
         # for j, imgs in enumerate(train_batch):
 
         # Wrap your DataLoader
-        progress_bar = tqdm(enumerate(train_batch), total=len(train_batch), desc="Training")
+        print(f"The length of train_batch => {len(train_batch)}")
+        # progress_bar = tqdm(enumerate(train_batch), total=len(train_batch), desc="Training")
+        pbar = tqdm(train_batch, desc=f"Epoch {epoch+1}", total=len(train_batch), ncols=85)
 
-        for j, imgs in progress_bar:
+        for j, imgs in enumerate(pbar):
 
             #imgs (batch_size,3,16,H,W)
             net_in = copy.deepcopy(imgs['batch'])
@@ -555,6 +557,8 @@ if args.start_epoch < args.epochs:
             if j % 10 == 0 or args.print_all:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
+            
+            pbar.set_postfix(batch=j)
 
         print('----------------------------------------')
         print('Epoch:', epoch)
