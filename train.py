@@ -12,6 +12,7 @@ from utils import *
 
 import time
 from model import EntropyLossEncap
+from tqdm.notebook import tqdm
 
 import argparse
 
@@ -259,7 +260,12 @@ if args.start_epoch < args.epochs:
         losscounter = 0
 
         # for j, (imgs, imgsjump) in enumerate(zip(train_batch, train_batch_jump)):
-        for j, imgs in enumerate(train_batch):
+        # for j, imgs in enumerate(train_batch):
+
+        # Wrap your DataLoader
+        progress_bar = tqdm(enumerate(train_batch), total=len(train_batch), desc="Training")
+
+        for j, imgs in progress_bar:
 
             #imgs (batch_size,3,16,H,W)
             net_in = copy.deepcopy(imgs['batch'])
