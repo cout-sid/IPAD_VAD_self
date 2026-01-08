@@ -89,8 +89,11 @@ class Reconstruction3DDataLoader(data.Dataset):
         # else:
         #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
 
-        video_name = os.path.basename(os.path.normpath(self.samples[index]))
+        # video_name = os.path.basename(os.path.normpath(self.samples[index]))
         filename = os.path.basename(self.samples[index])
+
+        parent_dir = os.path.dirname(self.samples[index])
+        video_name = os.path.basename(parent_dir)
 
         # Split by '.' and get the number part (e.g., '001')
         # This works for '001.jpg' -> ['001', 'jpg'] -> '001'
@@ -132,8 +135,11 @@ class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
         # else:
         #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
 
-        video_name = os.path.basename(os.path.normpath(self.samples[index]))
+        # video_name = os.path.basename(os.path.normpath(self.samples[index]))
         filename = os.path.basename(self.samples[index])
+
+        parent_dir = os.path.dirname(self.samples[index])
+        video_name = os.path.basename(parent_dir)
 
         # Split by '.' and get the number part (e.g., '001')
         # This works for '001.jpg' -> ['001', 'jpg'] -> '001'
