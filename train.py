@@ -121,8 +121,12 @@ train_folder = os.path.join(args.dataset_path, 'training', 'frames')
 
 # Loading dataset
 img_extension = '.tif' if args.dataset_type == 'ped1' else '.jpg'
+print('ccccccccccccccccccccccccccccccccccccc')
+print("BEFORE TRAIN DATASET")
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
                                            resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, img_extension=img_extension)
+print('ccccccccccccccccccccccccccccccccccccc')
+print("TRAIN DATASET LOADED")
 # train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
 #                                                 resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, jump=args.jump, return_normal_seq=args.pseudo_anomaly_jump_inpainting > 0, img_extension=img_extension)
 
@@ -208,7 +212,7 @@ if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 orig_stdout = sys.stdout
 f = open(os.path.join(log_dir, 'log.txt'), 'a')
-sys.stdout = f
+# sys.stdout = f
 
 torch.set_printoptions(profile="full")
 
