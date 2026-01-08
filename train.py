@@ -265,7 +265,7 @@ if args.start_epoch < args.epochs:
         # Wrap your DataLoader
         print(f"The length of train_batch => {len(train_batch)}")
         # progress_bar = tqdm(enumerate(train_batch), total=len(train_batch), desc="Training")
-        pbar = tqdm(train_batch, desc=f"Epoch {epoch+1}", total=len(train_batch), ncols=85)
+        pbar = tqdm(train_batch, desc=f"Epoch {epoch+1}", total=len(train_batch), ncols=85, file=orig_stdout)
 
         for j, imgs in enumerate(pbar):
 
