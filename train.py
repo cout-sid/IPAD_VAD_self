@@ -207,7 +207,7 @@ train_batch = data.DataLoader(train_dataset, batch_size=args.batch_size,
 #                                    shuffle=True, num_workers=args.num_workers, drop_last=True)
 
 # Report the training process
-log_dir = os.path.join('./exp', args.dataset_type, exp_dir)
+log_dir = os.path.join('./exp', exp_dir)
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 orig_stdout = sys.stdout
@@ -562,6 +562,9 @@ if args.start_epoch < args.epochs:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
             
+            if j==50:
+                break
+
             pbar.set_postfix(batch=j)
 
         print('----------------------------------------')
@@ -576,8 +579,9 @@ if args.start_epoch < args.epochs:
             'model': model,
             'optimizer': optimizer.state_dict(),
         }
-        if (epoch+1)%5 == 0:
+        if (epoch+1)%5 == 0 or epoch == args.epochs-1:
             torch.save(model_dict, os.path.join(log_dir, 'model_{:02d}.pth'.format(epoch)))
+
 
 toc = time.time()
 print('Training is finished')

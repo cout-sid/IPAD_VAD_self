@@ -75,3 +75,89 @@ def score_sum(list1, list2, alpha):
         list_result.append((alpha*list1[i]+(1-alpha)*list2[i]))
         
     return list_result
+
+
+# class TestDataLoader(Reconstruction3DDataLoader):
+#     def __init__(self, video_folder, label_folder, transform, resize_height, resize_width, 
+#                  num_frames=16, img_extension='.jpg', dataset='ped2'):
+#         # 1. Initialize the parent class to set up video paths and frame lists
+#         super(TestDataLoader, self).__init__(video_folder, transform, resize_height, resize_width, 
+#                                              num_frames, img_extension, dataset)
+        
+#         self.label_dir = label_folder
+#         self.video_labels = {}
+        
+#         # 2. Load labels and sync with existing video lengths
+#         self.load_all_labels()
+
+#     def load_all_labels(self):
+#         """
+#         Maps folder names (e.g., '01') to .npy files (e.g., '001.npy').
+#         Trims mismatches between image count and label count.
+#         """
+#         for video_name in self.videos.keys():
+#             # Map folder "01" to "001.npy"
+#             label_file = f"{int(video_name):03d}.npy"
+#             label_path = os.path.join(self.label_dir, label_file)
+
+#             if os.path.exists(label_path):
+#                 labels = np.load(label_path)
+#                 num_frames = self.videos[video_name]['length']
+#                 num_labels = len(labels)
+
+#                 # Sync: Use the smaller of the two to ensure every frame has a label
+#                 min_len = min(num_frames, num_labels)
+#                 self.video_labels[video_name] = labels[:min_len]
+                
+#                 # Update parent dictionary if we had to trim frames to match labels
+#                 if num_frames > min_len:
+#                     self.videos[video_name]['frame'] = self.videos[video_name]['frame'][:min_len]
+#                     self.videos[video_name]['length'] = min_len
+#             else:
+#                 print(f"Warning: Label file {label_path} not found for video {video_name}")
+
+#     def __getitem__(self, index):
+#         # Path of the first frame in the sequence
+#         full_path = self.samples[index]
+#         filename = os.path.basename(full_path)
+#         video_name = os.path.basename(os.path.dirname(full_path))
+
+#         # Determine frame index from filename (e.g., '081.jpg' -> 81)
+#         # Note: If filenames start at 001, frame_idx 0 corresponds to '001.jpg'
+#         frame_number = int(filename.split('.')[-2])
+#         frame_idx = frame_number - 1 if self.dataset != 'shanghai' else frame_number - 1
+
+#         # 1. Load the 16-frame clip
+#         batch = []
+#         for i in range(self._num_frames):
+#             # Target is current frame + step
+#             # parent's get_all_samples ensures this index is always valid
+#             target_frame_path = self.videos[video_name]['frame'][frame_idx + i]
+            
+#             image = np_load_frame(target_frame_path, self._resize_height, 
+#                                   self._resize_width, grayscale=True)
+            
+#             if self.transform is not None:
+#                 batch.append(self.transform(image))
+
+#         # 2. Extract Middle Label
+#         # For num_frames=16, the middle frame is index 8 (the 9th frame)
+#         middle_offset = self._num_frames // 2
+#         label_idx = frame_idx + middle_offset
+        
+#         # Pull the specific label for this middle frame
+#         if video_name in self.video_labels:
+#             # clip index just in case of very short video/label mismatch
+#             safe_idx = min(label_idx, len(self.video_labels[video_name]) - 1)
+#             label = self.video_labels[video_name][safe_idx]
+#         else:
+#             label = 0
+
+#         # 3. Format output
+#         img = OrderedDict()
+#         img['batch'] = np.stack(batch, axis=1) # Shape: (C, T, H, W)
+#         img['label'] = label
+#         img['video_name'] = video_name
+#         img['index'] = label_idx * 200 // self.videos[video_name]['length']
+        
+#         return img
