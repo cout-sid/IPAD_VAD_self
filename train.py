@@ -553,15 +553,16 @@ if args.start_epoch < args.epochs:
             loss_recon = torch.mean(stacked_loss_mse)
 
             loss = loss_recon + loss_entropy + loss_period
-            print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
+
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if j % 10 == 0 or args.print_all:
+            if j % 100 == 0 or args.print_all:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch+1, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
+                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
             
             # if j==5:
             #     break
