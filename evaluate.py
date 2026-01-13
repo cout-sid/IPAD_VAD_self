@@ -20,6 +20,7 @@ parser.add_argument('--w', type=int, default=256)
 parser.add_argument('--dataset_type', type=str, default='VAD')
 parser.add_argument('--dataset_path', type=str, required=True)
 parser.add_argument('--model_dir', type=str, required=True)
+parser.add_argument('--num_workers', type=int, default=2, help='number of workers for the train loader')
 parser.add_argument('--print_time', action='store_true')
 
 args = parser.parse_args()
@@ -31,8 +32,10 @@ if args.model == 'VST':
 else:
     model = convAE()
 
-model = nn.DataParallel(model).to(device)
-model_dict = torch.load(args.model_dir)
+if torch.cuda.is_available():
+    model = nn.DataParallel(model).to(device)
+
+model_dict = torch.load(args.model_dir, weights_only=False)
 
 try:
     model.load_state_dict(model_dict['model'].state_dict())
@@ -49,21 +52,26 @@ label_folder = os.path.join(args.dataset_path, 'test_label')
 test_dataset = TestDataLoader(
     test_folder, label_folder, 
     transforms.Compose([transforms.ToTensor()]),
-    resize_height=args.h, resize_width=args.w, 
+    resize_height=args.h, resize_width=args.w, num_frames=8,
     dataset=args.dataset_type
 )
 
-test_batch = data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=1)
+test_batch = data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=args.num_workers)
 
 # Storage for results
 psnr_records = OrderedDict() # Stores list of PSNRs per video_name
 gt_records = OrderedDict()   # Stores list of GT labels per video_name
 
 print(f'Evaluating {args.dataset_type}...')
+print(f"length of test_batch: {len(test_batch)}")
 
 # 3. Inference Loop
 tic = time.time()
 for k, data_dict in enumerate(test_batch):
+
+    # if k==50:
+    #     break
+
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
     video_name = data_dict['video_name'][0]
@@ -77,8 +85,15 @@ for k, data_dict in enumerate(test_batch):
         recon_frame = outputs['output']
         
         # Compare middle frame (index 8)
-        mse = torch.mean(loss_func_mse(recon_frame[0, :, 8], imgs[0, :, 8])).item()
+        # mse = torch.mean(loss_func_mse(recon_frame[0, :, 8], imgs[0, :, 8])).item()
         
+        # Get the temporal dimension size (dimension 2 for a B, C, D, H, W tensor)
+        total_frames = imgs.shape[2] 
+        mid_idx = total_frames // 2
+
+        # Calculate MSE for the middle frame
+        mse = torch.mean(loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])).item()
+
     psnr_records[video_name].append(psnr(mse))
     gt_records[video_name].append(gt_label)
 

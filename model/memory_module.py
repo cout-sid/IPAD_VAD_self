@@ -60,7 +60,7 @@ class MemoryUnit(nn.Module):
         # Sample 1	2.0	1.0	0.1     ======>   0.65	0.24	0.11  (sums to 1)
         # Sample 2	0.5	0.5	0.5     ======>   0.33	0.33	0.33  (sums to 1) 
 
-        print(att_weight.shape)
+        # print(att_weight.shape)
         # print(period_score.shape)
         # ReLU based shrinkage, hard shrinkage for positive value
         if(self.shrink_thres>0):

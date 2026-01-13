@@ -86,6 +86,7 @@ class VST3DDecoder(nn.Module):
                                output_padding=(1, 1, 1)),
             nn.BatchNorm3d(feature_num_x2),
             nn.LeakyReLU(0.2, inplace=True),
+            # change the stride to (1,2,2)  and output_padding to (0,1,1) doing this temporary change for reducing num_frames=8
             nn.ConvTranspose3d(feature_num_x2, feature_num, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
                                output_padding=(0, 1, 1)),
             nn.BatchNorm3d(feature_num),

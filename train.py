@@ -17,6 +17,7 @@ from tqdm.notebook import tqdm
 import argparse
 
 # python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --epochs 2 --num_workers 0
+# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_01.pth" --num_workers 0
 
 parser = argparse.ArgumentParser(description="STEAL Net")
 parser.add_argument('--model', type=str, default='VST', choices=['VST','conAE'])
@@ -124,7 +125,7 @@ img_extension = '.tif' if args.dataset_type == 'ped1' else '.jpg'
 print('ccccccccccccccccccccccccccccccccccccc')
 print("BEFORE TRAIN DATASET")
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
-                                           resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, img_extension=img_extension)
+                                           resize_height=args.h, resize_width=args.w, num_frames=8, dataset=args.dataset_type, img_extension=img_extension)
 print('ccccccccccccccccccccccccccccccccccccc')
 print("TRAIN DATASET LOADED")
 # train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
@@ -257,7 +258,7 @@ if args.start_epoch < args.epochs:
 
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
-        print(epoch)
+        print(epoch+1)
         pseudolossepoch = 0
         lossepoch = 0
         pseudolosscounter = 0
@@ -559,16 +560,16 @@ if args.start_epoch < args.epochs:
             optimizer.step()
 
             if j % 10 == 0 or args.print_all:
-                print("epoch {:d} iter {:d}/{:d}".format(epoch, j, len(train_batch)))
+                print("epoch {:d} iter {:d}/{:d}".format(epoch+1, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
             
-            if j==50:
-                break
+            # if j==5:
+            #     break
 
             pbar.set_postfix(batch=j)
 
         print('----------------------------------------')
-        print('Epoch:', epoch)
+        print('Epoch:', epoch+1)
         # if pseudolosscounter != 0:
         #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
@@ -580,7 +581,7 @@ if args.start_epoch < args.epochs:
             'optimizer': optimizer.state_dict(),
         }
         if (epoch+1)%5 == 0 or epoch == args.epochs-1:
-            torch.save(model_dict, os.path.join(log_dir, 'model_{:02d}.pth'.format(epoch)))
+            torch.save(model_dict, os.path.join(log_dir, 'model_{:02d}.pth'.format(epoch+1)))
 
 
 toc = time.time()

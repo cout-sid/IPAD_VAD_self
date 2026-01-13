@@ -21,8 +21,11 @@ class VST(torch.nn.Module):
             nn.BatchNorm3d(768),
             nn.LeakyReLU(0.2, inplace=True),
             # (batch_size,768,4,4,4)
+            nn.AdaptiveAvgPool3d((1, 1, 1)), 
             nn.Flatten(1),
-            nn.Linear(768*4*4*4,4096),
+            nn.Linear(768, 4096),
+            # nn.Flatten(1),
+            # nn.Linear(768*4*4*4,4096),
             nn.ReLU(),
             nn.Linear(4096,2048),
             nn.ReLU(),
@@ -35,14 +38,18 @@ class VST(torch.nn.Module):
     def forward(self, x):
         
         feature = self.transformer_encoder(x)
-        #feature (batch_size,768,4,8,8)
+        # print(f"printing the shape of output of VST model {feature.shape}")
+        #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
         recon_index = self.period(feature)
+        # print(f"The shape of recon_index i.e output of self.period{recon_index.shape}")
         # print(recon_index[0])
         res_mem = self.mem_rep(feature, recon_index)
         feature = res_mem['output']
+        # print(f"feature shape after memory module: {feature.shape}")
         att = res_mem['att']
         output = self.transformer_decoder(feature.clone())
-
+        # print("The shape of output after decoding")
+        # print(output.shape)
         return {'output': output, 'att': att, 'recon_index': recon_index}
 
 
