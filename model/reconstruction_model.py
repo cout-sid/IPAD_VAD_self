@@ -71,32 +71,38 @@ class VST3DDecoder(nn.Module):
 
         # Dong Gong's paper code + Tanh
         self.chnum_out = chnum_out
-        feature_num = 128
-        feature_num_2 = 96
-        feature_num_x2 = 256
+        feature_num = 64    # prev 128
+        feature_num_2 = 32   # prev 96
+        feature_num_x2 = 128  # prev 256
         feature_num_in = 768
         self.transformer_decoder = nn.Sequential(
-            # (4,768,4,8,8)
+            # (4,768,2,8,8)
+            # nn.ConvTranspose3d(feature_num_in, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
+            #                    output_padding=(1, 1, 1)),
+            # nn.BatchNorm3d(feature_num_x2),
+            # nn.LeakyReLU(0.2, inplace=True),
+            # (4,256,2,8,8)
             nn.ConvTranspose3d(feature_num_in, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
                                output_padding=(1, 1, 1)),
             nn.BatchNorm3d(feature_num_x2),
             nn.LeakyReLU(0.2, inplace=True),
-            # (4,256,8,16,16)
-            nn.ConvTranspose3d(feature_num_x2, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
+
+            nn.ConvTranspose3d(feature_num_x2, feature_num, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
                                output_padding=(1, 1, 1)),
-            nn.BatchNorm3d(feature_num_x2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # change the stride to (1,2,2)  and output_padding to (0,1,1) doing this temporary change for reducing num_frames=8
-            nn.ConvTranspose3d(feature_num_x2, feature_num, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
-                               output_padding=(0, 1, 1)),
             nn.BatchNorm3d(feature_num),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose3d(feature_num, feature_num_2, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
                                output_padding=(0, 1, 1)),
             nn.BatchNorm3d(feature_num_2),
             nn.LeakyReLU(0.2, inplace=True),
+            
             nn.ConvTranspose3d(feature_num_2, self.chnum_out, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
                                output_padding=(0, 1, 1)),
+
+
+            nn.ConvTranspose3d(self.chnum_out, self.chnum_out, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
+                               output_padding=(0, 1, 1)),
+
             nn.Tanh()
         )
 
