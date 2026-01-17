@@ -62,19 +62,28 @@ test_batch = data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_work
 psnr_records = OrderedDict() # Stores list of PSNRs per video_name
 gt_records = OrderedDict()   # Stores list of GT labels per video_name
 
+save_img_dir = "saved_images"
+save_plot_dir = "score_plots"
+os.makedirs(save_img_dir, exist_ok=True)
+os.makedirs(save_plot_dir, exist_ok=True)
+
 print(f'Evaluating {args.dataset_type}...')
 print(f"length of test_batch: {len(test_batch)}")
 
+active_video = None # using this for saving input/output for a video
+frame_counter = 0
 # 3. Inference Loop
 tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
-    # if k==50:
-    #     break
+    # if k%100!=0:
+    #     continue
 
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
     video_name = data_dict['video_name'][0]
+
+
 
     if video_name not in psnr_records:
         psnr_records[video_name] = []
@@ -96,6 +105,33 @@ for k, data_dict in enumerate(test_batch):
 
     psnr_records[video_name].append(psnr(mse))
     gt_records[video_name].append(gt_label)
+
+    if active_video==None or active_video!=video_name:
+        frame_counter=0
+        active_video = video_name
+    
+    frame_counter+=1
+
+    # if k%50 == 0:
+    if frame_counter%50 == 0:
+
+
+        label_str = "anomaly" if gt_label == 1 else "normal"
+
+        recon_img = (recon_frame[0, :, mid_idx].cpu().detach().numpy() + 1) * 127.5
+        recon_img = recon_img.transpose(1, 2, 0).astype(np.uint8) # Convert CHW to HWC
+
+        orig_img = (imgs[0, :, mid_idx].cpu().detach().numpy() + 1) * 127.5
+        orig_img = orig_img.transpose(1, 2, 0).astype(np.uint8) # Convert CHW to HWC
+
+        recon_name = f"{video_name}_f{frame_counter:04d}_recon_{label_str}.png"
+        orig_name = f"{video_name}_f{frame_counter:04d}_orig_{label_str}.png"
+        recon_path = os.path.join(save_img_dir, recon_name)
+        orig_path = os.path.join(save_img_dir, orig_name)
+
+        cv2.imwrite(recon_path, recon_img)
+        cv2.imwrite(orig_path, orig_img)
+
 
 toc = time.time()
 
@@ -147,7 +183,9 @@ for vid_name in psnr_records.keys():
         ax.add_patch(Rectangle((rs, 0), re-rs, 1, facecolor="pink", alpha=0.5))
     
     plt.legend()
-    plt.savefig(f'summary_plot_{vid_name}.png')
+    plot_name = f"summary_plot_{vid_name}.png"
+    summary_plot_path = os.path.join(save_plot_dir,plot_name)
+    plt.savefig(summary_plot_path)
     plt.close()
 
 print("Evaluation finished. Summary plots saved.")

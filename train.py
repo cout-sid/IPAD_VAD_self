@@ -17,7 +17,7 @@ from tqdm.notebook import tqdm
 import argparse
 
 # python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --epochs 2 --num_workers 0
-# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_01.pth" --num_workers 0
+# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0
 
 parser = argparse.ArgumentParser(description="STEAL Net")
 parser.add_argument('--model', type=str, default='VST', choices=['VST','conAE'])
