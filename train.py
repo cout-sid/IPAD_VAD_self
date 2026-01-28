@@ -655,7 +655,7 @@ if args.start_epoch < args.epochs:
             losscounter+=1
 
             loss = loss_recon + loss_entropy + loss_period
-            total_loss_epoch+=loss
+            total_loss_epoch+=loss.item()
 
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
             optimizer.zero_grad()
