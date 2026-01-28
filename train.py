@@ -621,6 +621,8 @@ if args.start_epoch < args.epochs:
             loss_period = loss_period * period_loss_weight
 
             modified_loss_mse = []
+            loss_recon_epoch = 0
+            total_loss_epoch=0
 
             # for b in range(args.batch_size):
                 # if jump_inpainting_pseudo_stat[b]:
@@ -649,8 +651,11 @@ if args.start_epoch < args.epochs:
             # loss_recon = torch.mean(stacked_loss_mse)
 
             loss_recon = loss_mse
+            loss_recon_epoch+=loss_recon.item()
+            losscounter+=1
 
             loss = loss_recon + loss_entropy + loss_period
+            total_loss_epoch+=loss
 
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
             optimizer.zero_grad()
@@ -673,7 +678,9 @@ if args.start_epoch < args.epochs:
         #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
             # print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
-            print('MeanLoss: Reconstruction {:.9f}'.format(loss_recon.item()))
+            print('MeanLoss: Reconstruction {:.9f}'.format(loss_recon_epoch/losscounter))
+            print("Overall loss per clip per epoch: {:.9f}".format(total_loss_epoch/losscounter))
+
 
 
         # Save the model and the memory items
