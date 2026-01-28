@@ -200,6 +200,38 @@ print("TRAIN DATASET LOADED")
 #                                      drop_last=True)
 #     imagenet_iter = iter(imagenet_batch)
 
+def batch_temporal_gradient_saliency(clips):
+    """
+    clips: (B, 3, D, H, W), normalized to [-1,1]
+    returns: (B, 1, D, H, W) saliency normalized to [0,1]
+    """
+    B, C, D, H, W = clips.shape
+    clips_01 = (clips + 1) / 2.0  # convert to [0,1]
+
+    saliency = torch.zeros((B, D, H, W), device=clips.device, dtype=clips.dtype)
+
+    # central temporal difference
+    for t in range(1, D-1):
+        prev_f = clips_01[:, :, t-1]
+        mid_f  = clips_01[:, :, t]
+        next_f = clips_01[:, :, t+1]
+
+        grad = (torch.abs(mid_f - prev_f) + torch.abs(next_f - mid_f)) / 2.0
+        grad = grad.mean(dim=1)  # mean across channels → scalar map
+        saliency[:, t] = grad
+
+    # forward/backward difference for edges
+    saliency[:, 0]  = torch.abs(clips_01[:,:,0]  - clips_01[:,:,1]).mean(dim=1)
+    saliency[:, -1] = torch.abs(clips_01[:,:,-1] - clips_01[:,:,-2]).mean(dim=1)
+
+    # normalize each sample
+    saliency_flat = saliency.view(B, -1)
+    sal_min = saliency_flat.min(dim=1)[0].view(B,1,1,1)
+    sal_max = saliency_flat.max(dim=1)[0].view(B,1,1,1)
+    saliency = (saliency - sal_min) / (sal_max - sal_min + 1e-8)
+
+    return saliency.unsqueeze(1)  # (B,1,D,H,W)
+
 train_size = len(train_dataset)
 
 train_batch = data.DataLoader(train_dataset, batch_size=args.batch_size,
@@ -267,6 +299,11 @@ if args.start_epoch < args.epochs:
         # for j, (imgs, imgsjump) in enumerate(zip(train_batch, train_batch_jump)):
         # for j, imgs in enumerate(train_batch):
 
+        patch_size = 8
+        high_ratio = 0.5        # top 50%
+        low_weight = 0.2        # weight for low-gradient patches
+
+
         # Wrap your DataLoader
         print(f"The length of train_batch => {len(train_batch)}")
         # progress_bar = tqdm(enumerate(train_batch), total=len(train_batch), desc="Training")
@@ -276,6 +313,10 @@ if args.start_epoch < args.epochs:
 
             #imgs (batch_size,3,16,H,W)
             net_in = copy.deepcopy(imgs['batch'])
+            # B, C, D, H, W = net_in.shape
+            # Hp = H // patch_size
+            # Wp = W // patch_size
+
             # net_in = net_in.cuda()
             net_in = net_in.to(device)
             img_index = copy.deepcopy(imgs['index'])
@@ -506,6 +547,52 @@ if args.start_epoch < args.epochs:
                 # else:
                 #     cls_labels.append(1)
 
+            B, C, D, H, W = net_in.shape
+            Hp = H // patch_size
+            Wp = W // patch_size
+
+            with torch.no_grad():
+                saliency = batch_temporal_gradient_saliency(net_in)  # (B,1,D,H,W)
+
+    # temporal aggregation → spatial importance
+                sal_spatial = saliency.mean(dim=2)  # (B,1,H,W)
+
+    # -----------------------------
+    # 2. Patch-level saliency
+    # -----------------------------
+                patch_sal = F.adaptive_avg_pool2d(
+                    sal_spatial.squeeze(1),  # (B,H,W)
+                    (Hp, Wp)
+                )  # (B,Hp,Wp)
+
+                patch_sal_flat = patch_sal.view(B, -1)  # (B,Hp*Wp)
+
+    # -----------------------------
+    # 3. Rank patches
+    # -----------------------------
+                num_patches = Hp * Wp
+                k = int(high_ratio * num_patches)
+
+                weights_patch = torch.full(
+                    (B, num_patches),
+                    low_weight,
+                    device=net_in.device
+                )
+
+                for b in range(B):
+                    _, idx = torch.topk(patch_sal_flat[b], k, largest=True)
+                    weights_patch[b, idx] = 1.0
+
+    # -----------------------------
+    # 4. Expand to tube weights
+    # -----------------------------
+                weights_patch = weights_patch.view(B, 1, 1, Hp, Wp)
+                weights_tube = F.interpolate(
+                    weights_patch,
+                    size=(D, H, W),
+                    mode="nearest"
+                )  # (B,1,D,H,W)
+
             ########## TRAIN GENERATOR
             # net_in (batch_size,3,16,H,W)
             Recon_frames = model.forward(net_in)
@@ -518,7 +605,15 @@ if args.start_epoch < args.epochs:
             loss_entropy = entropy_loss_weight * entropy_loss
             cls_labels = torch.Tensor(cls_labels).unsqueeze(1).to(device)
             #recon loss
-            loss_mse = loss_func_mse(outputs, net_in)
+            # loss_mse = loss_func_mse(outputs, net_in)
+
+            pixel_loss = loss_func_mse(outputs, net_in)  # (B,3,D,H,W)
+
+            weighted_pixel_loss = pixel_loss * weights_tube
+
+            loss_mse = weighted_pixel_loss.sum() / (weights_tube.sum() * C + 1e-8)
+
+
             #period loss
             loss_period = F.cross_entropy(recon_index,img_index)
 
@@ -526,7 +621,8 @@ if args.start_epoch < args.epochs:
             loss_period = loss_period * period_loss_weight
 
             modified_loss_mse = []
-            for b in range(args.batch_size):
+
+            # for b in range(args.batch_size):
                 # if jump_inpainting_pseudo_stat[b]:
                 #     modified_loss_mse.append(torch.mean(loss_func_mse(outputs[b], imgsjump[1][b].to(outputs.device))))
                 #     pseudolossepoch += modified_loss_mse[-1].cpu().detach().item()
@@ -544,13 +640,15 @@ if args.start_epoch < args.epochs:
                 #         lossepoch += modified_loss_mse[-1].cpu().detach().item()
                 #         losscounter += 1
 
-                modified_loss_mse.append(torch.mean(loss_mse[b]))
-                lossepoch += modified_loss_mse[-1].cpu().detach().item()
-                losscounter += 1
+                # modified_loss_mse.append(torch.mean(loss_mse[b]))
+                # lossepoch += modified_loss_mse[-1].cpu().detach().item()
+                # losscounter += 1
 
-            assert len(modified_loss_mse) == loss_mse.size(0)
-            stacked_loss_mse = torch.stack(modified_loss_mse)
-            loss_recon = torch.mean(stacked_loss_mse)
+            # assert len(modified_loss_mse) == loss_mse.size(0)
+            # stacked_loss_mse = torch.stack(modified_loss_mse)
+            # loss_recon = torch.mean(stacked_loss_mse)
+
+            loss_recon = loss_mse
 
             loss = loss_recon + loss_entropy + loss_period
 
@@ -574,7 +672,9 @@ if args.start_epoch < args.epochs:
         # if pseudolosscounter != 0:
         #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
-            print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
+            # print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
+            print('MeanLoss: Reconstruction {:.9f}'.format(loss_recon.item()))
+
 
         # Save the model and the memory items
         model_dict = {
