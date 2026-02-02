@@ -341,211 +341,7 @@ if args.start_epoch < args.epochs:
                 rand_number = np.random.rand()
                 pseudo_bool = False
 
-                # skip frame pseudo anomaly but with inpainting loss
-                # pseudo_anomaly_jump_inpainting = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_jump_inpainting
-                # total_pseudo_prob += args.pseudo_anomaly_jump_inpainting
-                # if pseudo_anomaly_jump_inpainting:
-                #     net_in[b] = imgsjump[0][b].cuda()
-                #     jump_inpainting_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     jump_inpainting_pseudo_stat.append(False)
 
-                # # cifar inpainting smooth pseudo anomaly
-                # pseudo_anomaly_cifar_inpainting_smooth = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_cifar_inpainting_smooth
-                # total_pseudo_prob += args.pseudo_anomaly_cifar_inpainting_smooth
-                # if pseudo_anomaly_cifar_inpainting_smooth:
-                #     try:
-                #         # Samples the batch
-                #         cifar_img, _ = next(cifar_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         cifar_iter = iter(cifar_batch)
-                #         cifar_img, _ = next(cifar_iter)
-                #     net_in[b], mask = create_pseudoanomaly_cifar_smooth(net_in[b], cifar_img[0], args.max_size,
-                #                                                         args.h, args.w,
-                #                                                         args.dataset_type, max_move=args.max_move)
-                #     cifar_inpainting_smooth_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     cifar_inpainting_smooth_pseudo_stat.append(False)
-
-                # # cifar inpainting smooth border pseudo anomaly
-                # pseudo_anomaly_cifar_inpainting_smoothborder = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_cifar_inpainting_smoothborder
-                # total_pseudo_prob += args.pseudo_anomaly_cifar_inpainting_smoothborder
-                # if pseudo_anomaly_cifar_inpainting_smoothborder:
-                #     try:
-                #         # Samples the batch
-                #         cifar_img, _ = next(cifar_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         cifar_iter = iter(cifar_batch)
-                #         cifar_img, _ = next(cifar_iter)
-                #     net_in[b], mask = create_pseudoanomaly_cifar_smoothborder(net_in[b], cifar_img[0], args.max_size,
-                #                                                               args.h, args.w,
-                #                                                               args.dataset_type, max_move=args.max_move)
-
-                #     # imgs_num = (net_in[b, :, 8].cpu().detach().numpy() + 1) * 127.5
-                #     # imgs_num = imgs_num.transpose(1, 2, 0).astype(dtype=np.uint8)
-                #     # cv2.imshow('a', imgs_num)
-                #     # imgs_num = (net_in[b, :, 9].cpu().detach().numpy() + 1) * 127.5
-                #     # imgs_num = imgs_num.transpose(1, 2, 0).astype(dtype=np.uint8)
-                #     # cv2.imshow('b', imgs_num)
-                #     # imgs_num = (net_in[b, :, 10].cpu().detach().numpy() + 1) * 127.5
-                #     # imgs_num = imgs_num.transpose(1, 2, 0).astype(dtype=np.uint8)
-                #     # cv2.imshow('c', imgs_num)
-                #     # cv2.waitKey(0)
-                #     cifar_inpainting_smoothborder_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     cifar_inpainting_smoothborder_pseudo_stat.append(False)
-
-                # # cifar inpainting cutmix pseudo anomaly
-                # pseudo_anomaly_cifar_inpainting_cutmix = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_cifar_inpainting_cutmix
-                # total_pseudo_prob += args.pseudo_anomaly_cifar_inpainting_cutmix
-                # if pseudo_anomaly_cifar_inpainting_cutmix:
-                #     try:
-                #         # Samples the batch
-                #         cifar_img, _ = next(cifar_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         cifar_iter = iter(cifar_batch)
-                #         cifar_img, _ = next(cifar_iter)
-                #     net_in[b], mask = create_pseudoanomaly_cifar_cutmix(net_in[b], cifar_img[0], args.max_size,
-                #                                                         args.h, args.w,
-                #                                                         args.dataset_type, max_move=args.max_move)
-
-                #     cifar_inpainting_cutmix_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     cifar_inpainting_cutmix_pseudo_stat.append(False)
-
-
-                # # cifar inpainting mixupcutmix pseudo anomaly
-                # pseudo_anomaly_cifar_inpainting_mixupcutmix = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_cifar_inpainting_mixupcutmix
-                # total_pseudo_prob += args.pseudo_anomaly_cifar_inpainting_mixupcutmix
-                # if pseudo_anomaly_cifar_inpainting_mixupcutmix:
-                #     try:
-                #         # Samples the batch
-                #         cifar_img, _ = next(cifar_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         cifar_iter = iter(cifar_batch)
-                #         cifar_img, _ = next(cifar_iter)
-                #     net_in[b], mask = create_pseudoanomaly_cifar_mixupcutmix(net_in[b], cifar_img[0], args.max_size,
-                #                                                              args.h, args.w,
-                #                                                              args.dataset_type, max_move=args.max_move)
-                #     cifar_inpainting_mixupcutmix_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     cifar_inpainting_mixupcutmix_pseudo_stat.append(False)
-
-
-                # # ped2 inpainting smooth border pseudo anomaly
-                # pseudo_anomaly_ped2_inpainting_smoothborder = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_ped2_inpainting_smoothborder
-                # total_pseudo_prob += args.pseudo_anomaly_ped2_inpainting_smoothborder
-                # if pseudo_anomaly_ped2_inpainting_smoothborder:
-                #     try:
-                #         # Samples the batch
-                #         ped2_seq = next(ped2_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         ped2_iter = iter(ped2_batch)
-                #         ped2_seq = next(ped2_iter)
-                #     net_in[b], mask = create_pseudoanomaly_seq_smoothborder(net_in[b], ped2_seq[0], args.max_size,
-                #                                                             args.h, args.w,
-                #                                                             args.dataset_type, max_move=args.max_move)
-
-                #     ped2_inpainting_smoothborder_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     ped2_inpainting_smoothborder_pseudo_stat.append(False)
-
-                # # SW_video inpainting smooth border pseudo anomaly
-                # pseudo_anomaly_SW_video_inpainting_smoothborder = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_SW_video_inpainting_smoothborder
-                # total_pseudo_prob += args.pseudo_anomaly_SW_video_inpainting_smoothborder
-                # if pseudo_anomaly_SW_video_inpainting_smoothborder:
-                #     try:
-                #         # Samples the batch
-                #         SW_video_seq = next(SW_video_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         SW_video_iter = iter(SW_video_batch)
-                #         SW_video_seq = next(SW_video_iter)
-                #     net_in[b], mask = create_pseudoanomaly_seq_smoothborder(net_in[b], SW_video_seq[0], args.max_size,
-                #                                                             args.h, args.w,
-                #                                                             args.dataset_type, max_move=args.max_move)
-
-                #     SW_video_inpainting_smoothborder_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     SW_video_inpainting_smoothborder_pseudo_stat.append(False)
-
-                # # VAD inpainting smooth border pseudo anomaly
-                # pseudo_anomaly_VAD_inpainting_smoothborder = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_VAD_inpainting_smoothborder
-                # total_pseudo_prob += args.pseudo_anomaly_VAD_inpainting_smoothborder
-                # if pseudo_anomaly_VAD_inpainting_smoothborder:
-                #     try:
-                #         # Samples the batch
-                #         VAD_seq = next(VAD_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         VAD_iter = iter(VAD_batch)
-                #         VAD_seq = next(VAD_iter)
-                #     net_in[b], mask = create_pseudoanomaly_seq_smoothborder(net_in[b], VAD_seq[0], args.max_size,
-                #                                                             args.h, args.w,
-                #                                                             args.dataset_type, max_move=args.max_move)
-
-                #     VAD_inpainting_smoothborder_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     VAD_inpainting_smoothborder_pseudo_stat.append(False)
-
-
-                # # shanghai inpainting smooth border pseudo anomaly
-                # pseudo_anomaly_shanghai_inpainting_smoothborder = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_shanghai_inpainting_smoothborder
-                # total_pseudo_prob += args.pseudo_anomaly_shanghai_inpainting_smoothborder
-                # if pseudo_anomaly_shanghai_inpainting_smoothborder:
-                #     try:
-                #         # Samples the batch
-                #         shanghai_seq = next(shanghai_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         shanghai_iter = iter(shanghai_batch)
-                #         shanghai_seq = next(shanghai_iter)
-                #     net_in[b], mask = create_pseudoanomaly_seq_smoothborder(net_in[b], shanghai_seq[0], args.max_size,
-                #                                                               args.h, args.w,
-                #                                                               args.dataset_type, max_move=args.max_move)
-                #     shanghai_inpainting_smoothborder_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     shanghai_inpainting_smoothborder_pseudo_stat.append(False)
-
-
-                # # imagenet inpainting smooth border pseudo anomaly
-                # pseudo_anomaly_imagenet_inpainting_smoothborder = total_pseudo_prob <= rand_number < total_pseudo_prob + args.pseudo_anomaly_imagenet_inpainting_smoothborder
-                # total_pseudo_prob += args.pseudo_anomaly_imagenet_inpainting_smoothborder
-                # if pseudo_anomaly_imagenet_inpainting_smoothborder:
-                #     try:
-                #         # Samples the batch
-                #         imagenet_img, _ = next(imagenet_iter)
-                #     except StopIteration:
-                #         # restart the generator if the previous generator is exhausted.
-                #         imagenet_iter = iter(imagenet_batch)
-                #         imagenet_img, _ = next(imagenet_iter)
-                #     net_in[b], mask = create_pseudoanomaly_cifar_smoothborder(net_in[b], imagenet_img[0], args.max_size,
-                #                                                               args.h, args.w,
-                #                                                               args.dataset_type, max_move=args.max_move)
-                #     imagenet_inpainting_smoothborder_pseudo_stat.append(True)
-                #     pseudo_bool = True
-                # else:
-                #     imagenet_inpainting_smoothborder_pseudo_stat.append(False)
-
-
-                # if pseudo_bool:
-                #     cls_labels.append(0)
-                # else:
-                #     cls_labels.append(1)
 
             B, C, D, H, W = net_in.shape
             Hp = H // patch_size
@@ -599,6 +395,8 @@ if args.start_epoch < args.epochs:
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
+            motion_loss_batch = Recon_frames['motion_loss']
+            motion_loss = motion_loss_batch.mean()
             # memory entropy loss
             entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
             entropy_loss_val = entropy_loss.item()
@@ -654,7 +452,7 @@ if args.start_epoch < args.epochs:
             loss_recon_epoch+=loss_recon.item()
             losscounter+=1
 
-            loss = loss_recon + loss_entropy + loss_period
+            loss = loss_recon + loss_entropy + loss_period +motion_loss
             total_loss_epoch+=loss.item()
 
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
@@ -665,7 +463,7 @@ if args.start_epoch < args.epochs:
             if j % 100 == 0 or args.print_all:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch+1, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
-                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
+                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}, motion_loss: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item(),motion_loss.item()))
             
             # if j==5:
             #     break

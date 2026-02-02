@@ -65,14 +65,26 @@ class VST(torch.nn.Module):
         # print(f"The shape of recon_index i.e output of self.period: {recon_index.shape}")
         # print(recon_index[0])
         res_mem = self.mem_rep(feature, recon_index)
-        feature = res_mem['output']
+        feature_mem = res_mem['output']
         # print(f"feature shape after memory module: {feature.shape}")
         att = res_mem['att']
-        output = self.transformer_decoder(feature.clone())
+        output = self.transformer_decoder(feature_mem.clone())
         # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        
+        # 5. ---- MOTION LOSS (NEW) ----
+        # motion before memory
+        motion_enc = feature[:, :, 1:] - feature[:, :, :-1]
+        # motion after memory
+        motion_mem = feature_mem[:, :, 1:] - feature_mem[:, :, :-1]
+
+        # motion consistency loss
+        motion_loss = torch.norm(
+            motion_enc - motion_mem,
+            dim=1
+        ).mean(dim=[1, 2, 3])   # (B,)
 
         # print("The shape of output after decoding")
         # print(output.shape)
-        return {'output': output, 'att': att, 'recon_index': recon_index}
+        return {'output': output, 'att': att, 'recon_index': recon_index, 'motion_loss':motion_loss}
 
 
