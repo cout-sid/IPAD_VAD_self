@@ -6,7 +6,7 @@ from torch.nn.parameter import Parameter
 from torch.nn import functional as F
 import numpy as np
 
-#
+
 class MemoryUnit(nn.Module):
     def __init__(self, mem_dim, fea_dim, shrink_thres=0.0025):
         super(MemoryUnit, self).__init__()
@@ -28,11 +28,14 @@ class MemoryUnit(nn.Module):
     def forward(self, input, period_score):
         # print(input.shape)
         score,indices = torch.max(period_score,dim=1)
+        #shape (B)
         indices = (torch.floor((indices/200)*self.mem_dim).cpu().numpy()).astype(int) # earlier using 126 instead of 200 which is wrong
         
+        # indices are mapping to [0,1999]
+
         # # print(indices)
         att_weight = F.linear(input, self.weight)  # Fea x Mem^T, (TxC) x (CxM) = TxM
-
+        # T = BxD(no of frames)xHXW 
 
         # a = score[i]
         # att_weight[:,indices[i]-7:indices[i]+8]=att_weight[:,indices[i]-7:indices[i]+8]+att_weight[:,indices[i]-7:indices[i]+8].clone()*score[i]

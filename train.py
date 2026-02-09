@@ -300,7 +300,7 @@ if args.start_epoch < args.epochs:
         # for j, imgs in enumerate(train_batch):
 
         patch_size = 8
-        high_ratio = 0.5        # top 50%
+        high_ratio = 0.7        # top 50%
         low_weight = 0.2        # weight for low-gradient patches
 
 
@@ -395,8 +395,7 @@ if args.start_epoch < args.epochs:
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
-            motion_loss_batch = Recon_frames['motion_loss']
-            motion_loss = motion_loss_batch.mean()
+
             # memory entropy loss
             entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
             entropy_loss_val = entropy_loss.item()
@@ -452,7 +451,7 @@ if args.start_epoch < args.epochs:
             loss_recon_epoch+=loss_recon.item()
             losscounter+=1
 
-            loss = loss_recon + loss_entropy + loss_period +motion_loss
+            loss = loss_recon + loss_entropy + loss_period
             total_loss_epoch+=loss.item()
 
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
@@ -463,7 +462,7 @@ if args.start_epoch < args.epochs:
             if j % 100 == 0 or args.print_all:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch+1, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
-                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}, motion_loss: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item(),motion_loss.item()))
+                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
             
             # if j==5:
             #     break
@@ -486,9 +485,13 @@ if args.start_epoch < args.epochs:
             'model': model,
             'optimizer': optimizer.state_dict(),
         }
+
         if (epoch+1)%5 == 0 or epoch == args.epochs-1:
             torch.save(model_dict, os.path.join(log_dir, 'model_{:02d}.pth'.format(epoch+1)))
 
+        if epoch == args.epochs-1:
+            torch.save(model_dict, os.path.join(log_dir, 'model_final.pth'))
+            
 
 toc = time.time()
 print('Training is finished')
