@@ -300,7 +300,7 @@ if args.start_epoch < args.epochs:
         # for j, imgs in enumerate(train_batch):
 
         patch_size = 8
-        high_ratio = 0.7        # top 50%
+        high_ratio = 0.9        # top 50%
         low_weight = 0.2        # weight for low-gradient patches
 
 
