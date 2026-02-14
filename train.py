@@ -300,7 +300,7 @@ if args.start_epoch < args.epochs:
         # for j, imgs in enumerate(train_batch):
 
         patch_size = 8
-        high_ratio = 0.9        # top 50%
+        high_ratio = 0.7        # top 50%
         low_weight = 0.2        # weight for low-gradient patches
 
 
@@ -406,10 +406,10 @@ if args.start_epoch < args.epochs:
 
             pixel_loss = loss_func_mse(outputs, net_in)  # (B,3,D,H,W)
 
-            weighted_pixel_loss = pixel_loss * weights_tube
+            # weighted_pixel_loss = pixel_loss * weights_tube
 
-            loss_mse = weighted_pixel_loss.sum() / (weights_tube.sum() * C + 1e-8)
-
+            # loss_mse = weighted_pixel_loss.sum() / (weights_tube.sum() * C + 1e-8)
+            loss_mse=pixel_loss
 
             #period loss
             loss_period = F.cross_entropy(recon_index,img_index)
@@ -421,7 +421,7 @@ if args.start_epoch < args.epochs:
             loss_recon_epoch = 0
             total_loss_epoch=0
 
-            # for b in range(args.batch_size):
+            for b in range(args.batch_size):
                 # if jump_inpainting_pseudo_stat[b]:
                 #     modified_loss_mse.append(torch.mean(loss_func_mse(outputs[b], imgsjump[1][b].to(outputs.device))))
                 #     pseudolossepoch += modified_loss_mse[-1].cpu().detach().item()
@@ -439,17 +439,17 @@ if args.start_epoch < args.epochs:
                 #         lossepoch += modified_loss_mse[-1].cpu().detach().item()
                 #         losscounter += 1
 
-                # modified_loss_mse.append(torch.mean(loss_mse[b]))
-                # lossepoch += modified_loss_mse[-1].cpu().detach().item()
-                # losscounter += 1
+                modified_loss_mse.append(torch.mean(loss_mse[b]))
+                lossepoch += modified_loss_mse[-1].cpu().detach().item()
+                losscounter += 1
 
-            # assert len(modified_loss_mse) == loss_mse.size(0)
-            # stacked_loss_mse = torch.stack(modified_loss_mse)
-            # loss_recon = torch.mean(stacked_loss_mse)
+            assert len(modified_loss_mse) == loss_mse.size(0)
+            stacked_loss_mse = torch.stack(modified_loss_mse)
+            loss_recon = torch.mean(stacked_loss_mse)
 
-            loss_recon = loss_mse
-            loss_recon_epoch+=loss_recon.item()
-            losscounter+=1
+            # loss_recon = loss_mse
+            # loss_recon_epoch+=loss_recon.item()
+            # losscounter+=1
 
             loss = loss_recon + loss_entropy + loss_period
             total_loss_epoch+=loss.item()
@@ -475,7 +475,7 @@ if args.start_epoch < args.epochs:
         #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
             # print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
-            print('MeanLoss: Reconstruction {:.9f}'.format(loss_recon_epoch/losscounter))
+            print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
             print("Overall loss per clip per epoch: {:.9f}".format(total_loss_epoch/losscounter))
 
 

@@ -5,6 +5,8 @@ from einops import rearrange
 from model import MemModule
 import torch.nn as nn
 from torch.nn import functional as F
+from .wavelet_attention import WaveletAttention
+
 
 # from torch_vst_encoder import TorchVSTEncoder
 
@@ -54,6 +56,9 @@ class VST(torch.nn.Module):
         # self.encoder = Reconstruction3DEncoder(chnum_in=3)  # RGB
         # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
 
+        self.wavelet_att = WaveletAttention(channels=768)
+
+
     def forward(self, x):
         
         feature = self.transformer_encoder(x)
@@ -61,6 +66,9 @@ class VST(torch.nn.Module):
         # print("model debugging")
         # print(f"printing the shape of output of VST model {feature.shape}")
         #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
+
+        #wavelet transform
+        feature, wavelet_att = self.wavelet_att(feature)
         recon_index = self.period(feature)
         # print(f"The shape of recon_index i.e output of self.period: {recon_index.shape}") 
         # [8,200]

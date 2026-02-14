@@ -77,7 +77,7 @@ tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
     # if k%100!=0:
-    #     continue
+        # continue
 
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
