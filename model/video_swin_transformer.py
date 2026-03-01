@@ -81,7 +81,7 @@ class VST(torch.nn.Module):
         output = self.transformer_decoder(feature_mem.clone())
         # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         
-
+        
         
         # print("The shape of output after decoding")
         # print(output.shape)

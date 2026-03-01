@@ -45,54 +45,63 @@ class HaarDWT2D(nn.Module):
 
         return LL, LH, HL, HH
 
-
 class WaveletAttention(nn.Module):
     """
-    Wavelet-based High Frequency Attention
+    Wavelet-based High Frequency Attention with Channel Bottleneck and Residual Connection
     """
-    def __init__(self, channels):
+    def __init__(self, channels=768, reduced_channels=32):
         super(WaveletAttention, self).__init__()
 
         self.dwt = HaarDWT2D()
-
-        # Reduce high-frequency maps back to original size
-        self.conv = nn.Conv3d(channels, channels, kernel_size=1)
+        
+        # Step 1: Bottleneck - Reduce channels to extract core spatial features
+        self.reduce = nn.Conv3d(channels, reduced_channels, kernel_size=1)
+        
+        # Step 2: High-frequency processing
+        # Processes the high-frequency energy map
+        self.conv_hf = nn.Sequential(
+            nn.Conv3d(reduced_channels, reduced_channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(reduced_channels),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Step 3: Expansion - Project back to 768 channels to create the attention mask
+        self.expand = nn.Conv3d(reduced_channels, channels, kernel_size=1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         """
-        x: (B, C, T, H, W)
+        x: (B, C, T, H, W) where C=768, H=8, W=8
         """
+        B, C, T, H, W = x.shape
 
-        LL, LH, HL, HH = self.dwt(x)
+        # 1. Channel Reduction
+        x_red = self.reduce(x) # (B, reduced_channels, T, 8, 8)
 
-        # High-frequency energy
+        # 2. DWT on reduced features
+        LL, LH, HL, HH = self.dwt(x_red) # Spatial resolution becomes 4x4
+
+        # 3. Calculate High-Frequency Energy
         hf_energy = torch.abs(LH) + torch.abs(HL) + torch.abs(HH)
+        
+        # 4. Refine HF map (Optional but helps smoothing)
+        hf_energy = self.conv_hf(hf_energy)
 
-        B, C, T, H, W = hf_energy.shape
-        hf_energy = hf_energy.permute(0, 2, 1, 3, 4)  # (B, T, C, H, W)
-        hf_energy = hf_energy.reshape(B*T, C, H, W)
-
-
-        # Upsample back to original size
-        hf_energy = F.interpolate(
+        # 5. Upsample back to 8x8
+        # We handle T separately to use 2D-based interpolation efficiently if needed,
+        # but 3D interpolate works fine for spatial-only scaling.
+        hf_upsampled = F.interpolate(
             hf_energy,
-            size=x.shape[-2:],
-            mode='bilinear',
+            size=(T, H, W), # (T, 8, 8)
+            mode='trilinear',
             align_corners=False
         )
 
-        # Restore temporal dimension shape
-        hf_energy = hf_energy.reshape(B, T, C, x.shape[-2], x.shape[-1])
-        hf_energy = hf_energy.permute(0, 2, 1, 3, 4)
+        # 6. Generate Attention Mask (Expand back to 768 channels)
+        att = self.sigmoid(self.expand(hf_upsampled))
 
-
-
-
-        # Generate attention
-        att = self.sigmoid(self.conv(hf_energy))
-
-        # Reweight original feature
-        out = x * att
+        # 7. Residual Connection: Original + (Original * Attention)
+        # This ensures that even if attention is 0, the base features remain.
+        out = x + (x * att) 
 
         return out, att
