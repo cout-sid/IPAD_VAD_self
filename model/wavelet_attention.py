@@ -85,17 +85,22 @@ class WaveletAttention(nn.Module):
         hf_energy = torch.abs(LH) + torch.abs(HL) + torch.abs(HH)
         
         # 4. Refine HF map (Optional but helps smoothing)
-        hf_energy = self.conv_hf(hf_energy)
+        # hf_energy = self.conv_hf(hf_energy)
+        
+        B, C, T, h_small, w_small = hf_energy.shape
+        hf_energy = hf_energy.permute(0, 2, 1, 3, 4).reshape(B * T, C, h_small, w_small)
 
         # 5. Upsample back to 8x8
         # We handle T separately to use 2D-based interpolation efficiently if needed,
         # but 3D interpolate works fine for spatial-only scaling.
         hf_upsampled = F.interpolate(
-            hf_energy,
-            size=(T, H, W), # (T, 8, 8)
-            mode='trilinear',
+            hf_energy, 
+            size=(H, W), 
+            mode='bilinear', 
             align_corners=False
         )
+
+        hf_upsampled = hf_upsampled.view(B, T, C, H, W).permute(0, 2, 1, 3, 4)
 
         # 6. Generate Attention Mask (Expand back to 768 channels)
         att = self.sigmoid(self.expand(hf_upsampled))
