@@ -288,6 +288,9 @@ if args.start_epoch < args.epochs:
         # model.cuda()
         model.to(device)
 
+    epoch_mean_list=[]
+    epoch_overall_list=[]
+
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
         print(epoch+1)
@@ -475,10 +478,13 @@ if args.start_epoch < args.epochs:
         #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
             # print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
-            print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
-            print("Overall loss per clip per epoch: {:.9f}".format(total_loss_epoch/losscounter))
+            meanloss=lossepoch/losscounter
+            totalloss=total_loss_epoch/losscounter
+            print('MeanLoss: Reconstruction {:.9f}'.format(meanloss))
+            print("Overall loss per clip per epoch: {:.9f}".format(totalloss))
 
-
+            epoch_mean_list.append(round(meanloss, 9))
+            epoch_overall_list.append(round(totalloss, 9))
 
         # Save the model and the memory items
         model_dict = {
@@ -492,6 +498,10 @@ if args.start_epoch < args.epochs:
         if epoch == args.epochs-1:
             torch.save(model_dict, os.path.join(log_dir, 'model_final.pth'))
             
+print("RECONSTRUCTION MEAN FOR EPOCHS")
+print(epoch_mean_list)
+print("TOTAL LOSS FOR EPOCHS")
+print(epoch_overall_list)
 
 toc = time.time()
 print('Training is finished')
