@@ -71,9 +71,9 @@ class VST3DDecoder(nn.Module):
 
         # Dong Gong's paper code + Tanh
         self.chnum_out = chnum_out
-        feature_num = 64    # prev 128
-        feature_num_2 = 32   # prev 96
-        feature_num_x2 = 128  # prev 256
+        feature_num = 128    # prev 128
+        feature_num_2 = 96   # prev 96
+        feature_num_x2 = 256  # prev 256
         feature_num_in = 768
         self.transformer_decoder = nn.Sequential(
             # (4,768,2,8,8)
