@@ -5,7 +5,8 @@ from einops import rearrange
 from model import MemModule
 import torch.nn as nn
 from torch.nn import functional as F
-from .wavelet_attention import WaveletAttention
+
+from .wavelet_attention import AdvancedWaveletAttention # Updated from WaveletAttention
 
 
 # from torch_vst_encoder import TorchVSTEncoder
@@ -36,6 +37,7 @@ class VST(torch.nn.Module):
         self.transformer_encoder = SwinTransformer3D()
         # self.transformer_encoder = TorchVSTEncoder()
 
+
         self.mem_rep = MemModule(mem_dim=mem_dim, fea_dim=768, shrink_thres=shrink_thres)
         self.period = nn.Sequential(
             nn.Conv3d(768, 768, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1)),
@@ -56,7 +58,7 @@ class VST(torch.nn.Module):
         # self.encoder = Reconstruction3DEncoder(chnum_in=3)  # RGB
         # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
 
-        self.wavelet_att = WaveletAttention(channels=768)
+        self.wavelet_att = AdvancedWaveletAttention(channels=768, wavelet='db4')
 
 
     def forward(self, x):
@@ -68,7 +70,7 @@ class VST(torch.nn.Module):
         #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
 
         #wavelet transform
-        feature, wavelet_att = self.wavelet_att(feature)
+        feature = self.wavelet_att(feature)
         recon_index = self.period(feature)
         # print(f"The shape of recon_index i.e output of self.period: {recon_index.shape}") 
         # [8,200]

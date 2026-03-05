@@ -393,7 +393,7 @@ if args.start_epoch < args.epochs:
                 )  # (B,1,D,H,W)
 
             ########## TRAIN GENERATOR
-            # net_in (batch_size,3,16,H,W)
+            # net_in (batch_size,3,num_frames,H,W)
             Recon_frames = model.forward(net_in)
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
