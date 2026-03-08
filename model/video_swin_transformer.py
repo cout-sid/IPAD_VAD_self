@@ -58,7 +58,7 @@ class VST(torch.nn.Module):
         # self.encoder = Reconstruction3DEncoder(chnum_in=3)  # RGB
         # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
 
-        self.wavelet_att = AdvancedWaveletAttention(channels=768, wavelet='db4')
+        self.wavelet_att = AdvancedWaveletAttention(channels=768)
 
 
     def forward(self, x):
@@ -70,7 +70,7 @@ class VST(torch.nn.Module):
         #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
 
         #wavelet transform
-        feature = self.wavelet_att(feature)
+
         recon_index = self.period(feature)
         # print(f"The shape of recon_index i.e output of self.period: {recon_index.shape}") 
         # [8,200]
@@ -80,6 +80,8 @@ class VST(torch.nn.Module):
         # print(f"feature shape after memory module: {feature.shape}")
         # [8, 768, 2, 8, 8]
         att = res_mem['att']
+        feature_mem = self.wavelet_att(feature_mem)
+
         output = self.transformer_decoder(feature_mem.clone())
         # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         

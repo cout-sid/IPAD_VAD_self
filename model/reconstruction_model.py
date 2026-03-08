@@ -76,33 +76,39 @@ class VST3DDecoder(nn.Module):
         feature_num_x2 = 256  # prev 256
         feature_num_in = 768
         self.transformer_decoder = nn.Sequential(
-            # (4,768,2,8,8)
-            # nn.ConvTranspose3d(feature_num_in, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
-            #                    output_padding=(1, 1, 1)),
-            # nn.BatchNorm3d(feature_num_x2),
-            # nn.LeakyReLU(0.2, inplace=True),
-            # (4,256,2,8,8)
+            
+            # (768,2,8,8)
             nn.ConvTranspose3d(feature_num_in, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
                                output_padding=(1, 1, 1)),
             nn.BatchNorm3d(feature_num_x2),
             nn.LeakyReLU(0.2, inplace=True),
-
-            nn.ConvTranspose3d(feature_num_x2, feature_num, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
+                # 256,4,16,16
+            nn.ConvTranspose3d(feature_num_x2, feature_num_x2, (3, 3, 3), stride=(2, 2, 2), padding=(1, 1, 1),
                                output_padding=(1, 1, 1)),
+            nn.BatchNorm3d(feature_num_x2),
+            nn.LeakyReLU(0.2, inplace=True),
+                # 256,8,32,32
+
+            nn.ConvTranspose3d(feature_num_x2, feature_num, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
+                               output_padding=(0, 1, 1)),
             nn.BatchNorm3d(feature_num),
             nn.LeakyReLU(0.2, inplace=True),
+                # 128,8,64,64
+
             nn.ConvTranspose3d(feature_num, feature_num_2, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
                                output_padding=(0, 1, 1)),
             nn.BatchNorm3d(feature_num_2),
             nn.LeakyReLU(0.2, inplace=True),
-            
+                
+            # 96,8,128,128
             nn.ConvTranspose3d(feature_num_2, self.chnum_out, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
                                output_padding=(0, 1, 1)),
 
-
-            nn.ConvTranspose3d(self.chnum_out, self.chnum_out, (3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1),
-                               output_padding=(0, 1, 1)),
-
+                
+            # 3,8,256,256
+            nn.ConvTranspose3d(self.chnum_out, self.chnum_out, (3, 3, 3), stride=(1, 1, 1), padding=(1, 1, 1),
+                               output_padding=(0, 0, 0)),
+            # 3,8,256,256
             nn.Tanh()
         )
 

@@ -1,46 +1,50 @@
 import torch
 import torch.nn as nn
-from pytorch_wavelets import DWTForward, DWTInverse  # Requires pip install pytorch_wavelets
+from pytorch_wavelets import DWTForward
 
 class AdvancedWaveletAttention(nn.Module):
-    def __init__(self, channels, wavelet='db4'):
-        super(AdvancedWaveletAttention, self).__init__()
-        # Use J=1 for single level decomposition; wave='db4' is smoother than Haar
-        self.xfm = DWTForward(J=1, wave=wavelet, mode='reflect')
-        self.ifm = DWTInverse(wave=wavelet, mode='reflect')
-        
-        # Channel attention to weight the importance of sub-bands
-        # DWT produces 4 sub-bands (LL, LH, HL, HH); we weight them individually
-        self.subband_attention = nn.Sequential(
-            nn.AdaptiveAvgPool3d(1),
-            nn.Conv3d(channels, channels // 8, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv3d(channels // 8, channels, 1),
-            nn.Sigmoid()
+
+    def __init__(self, channels):
+        super().__init__()
+
+        self.dwt = DWTForward(J=1, wave='haar', mode='reflect')
+
+        self.channel_reduce = nn.Conv3d(
+            channels * 4,
+            channels,
+            kernel_size=1
+        )
+
+        # restore spatial resolution
+        self.upsample = nn.Upsample(
+            scale_factor=(1,2,2),
+            mode='trilinear',
+            align_corners=False
         )
 
     def forward(self, x):
-        # x shape: (B, C, T, H, W)
-        b, c, t, h, w = x.shape
-        
-        # We apply 2D DWT per temporal slice (T) or treat T as batch
-        x_reshaped = x.permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
-        
-        # Forward DWT: Yl (low freq), Yh (list of high freq details)
-        Yl, Yh = self.xfm(x_reshaped)
-        
-        # Process high-frequency details (Yh[0] is shape (B*T, C, 3, H/2, W/2))
-        # We can apply attention here to emphasize specific detail orientations
+
+        B,C,T,H,W = x.shape
+
+        x = x.permute(0,2,1,3,4).reshape(-1,C,H,W)
+
+        Yl, Yh = self.dwt(x)
+
         details = Yh[0]
-        # Example: Simple spatial-frequency attention
-        att_mask = torch.sigmoid(details)
-        enhanced_details = details * att_mask
-        
-        # Inverse DWT to reconstruct the enhanced feature map
-        out_reshaped = self.ifm((Yl, [enhanced_details]))
-        
-        # Restore original shape
-        out = out_reshaped.view(b, t, c, h, w).permute(0, 2, 1, 3, 4)
-        
-        # Final channel-wise calibration
-        return out * self.subband_attention(out)
+
+        LH = details[:,:,0,:,:]
+        HL = details[:,:,1,:,:]
+        HH = details[:,:,2,:,:]
+
+        wavelet_features = torch.cat([Yl, LH, HL, HH], dim=1)
+
+        wavelet_features = wavelet_features.view(
+            B,T,4*C,H//2,W//2
+        ).permute(0,2,1,3,4)
+
+        out = self.channel_reduce(wavelet_features)
+
+        # restore 8x8 resolution
+        out = self.upsample(out)
+
+        return out

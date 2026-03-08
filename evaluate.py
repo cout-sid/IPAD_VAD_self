@@ -76,8 +76,8 @@ frame_counter = 0
 tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
-    # if k%100!=0:
-    #     continue
+    if k%100!=0:
+        continue
 
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
@@ -112,8 +112,8 @@ for k, data_dict in enumerate(test_batch):
     
     frame_counter+=1
 
-    # if k%50 == 0:
-    if frame_counter%50 == 0:
+    if k%50 == 0:
+    # if frame_counter%50 == 0:
 
 
         label_str = "anomaly" if gt_label == 1 else "normal"
@@ -124,14 +124,29 @@ for k, data_dict in enumerate(test_batch):
         orig_img = (imgs[0, :, mid_idx].cpu().detach().numpy() + 1) * 127.5
         orig_img = orig_img.transpose(1, 2, 0).astype(np.uint8) # Convert CHW to HWC
 
+        # ----- compute heatmap -----
+        diff = cv2.absdiff(orig_img, recon_img)
+
+        # convert to grayscale difference
+        diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+
+        # normalize for visualization
+        diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX)
+
+        # apply heatmap colormap
+        heatmap = cv2.applyColorMap(diff_norm, cv2.COLORMAP_JET)
+
         recon_name = f"{video_name}_f{frame_counter:04d}_recon_{label_str}.png"
         orig_name = f"{video_name}_f{frame_counter:04d}_orig_{label_str}.png"
+        heatmap_name = f"{video_name}_f{frame_counter:04d}_heatmap_{label_str}.png"
+
         recon_path = os.path.join(save_img_dir, recon_name)
         orig_path = os.path.join(save_img_dir, orig_name)
+        heatmap_path = os.path.join(save_img_dir, heatmap_name)
 
         cv2.imwrite(recon_path, recon_img)
         cv2.imwrite(orig_path, orig_img)
-
+        cv2.imwrite(heatmap_path, heatmap)
 
 toc = time.time()
 
