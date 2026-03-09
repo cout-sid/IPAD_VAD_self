@@ -80,7 +80,7 @@ class VST(torch.nn.Module):
         # print(f"feature shape after memory module: {feature.shape}")
         # [8, 768, 2, 8, 8]
         att = res_mem['att']
-        feature_mem = self.wavelet_att(feature_mem)
+        # feature_mem = self.wavelet_att(feature_mem)
 
         output = self.transformer_decoder(feature_mem.clone())
         # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
