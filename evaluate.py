@@ -12,6 +12,7 @@ import time
 import numpy as np
 import scipy.io
 import os
+from model import EntropyLossEncap
 
 parser = argparse.ArgumentParser(description="STEAL Net Evaluation")
 parser.add_argument('--model', type=str, default='VST', choices=['VST', 'conAE'])
@@ -25,6 +26,7 @@ parser.add_argument('--print_time', action='store_true')
 
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+tr_entropy_loss_func = EntropyLossEncap().to(device)
 
 # 1. Load Model
 if args.model == 'VST':
@@ -76,14 +78,15 @@ frame_counter = 0
 tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
-    # if k%100!=0:
-    #     continue
+    if k%100!=0:
+        continue
 
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
     video_name = data_dict['video_name'][0]
 
-
+    # new
+    img_index = data_dict['index'].to(device)    
 
     if video_name not in psnr_records:
         psnr_records[video_name] = []
@@ -92,18 +95,29 @@ for k, data_dict in enumerate(test_batch):
     with torch.no_grad():
         outputs = model(imgs)
         recon_frame = outputs['output']
-        
-        # Compare middle frame (index 8)
-        # mse = torch.mean(loss_func_mse(recon_frame[0, :, 8], imgs[0, :, 8])).item()
+        att_w = outputs['att']
+        recon_index = outputs['recon_index']
+
         
         # Get the temporal dimension size (dimension 2 for a B, C, D, H, W tensor)
         total_frames = imgs.shape[2] 
         mid_idx = total_frames // 2
 
         # Calculate MSE for the middle frame
-        mse = torch.mean(loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])).item()
+        recon_loss = torch.mean(loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])).item()
 
-    psnr_records[video_name].append(psnr(mse))
+        # entropy loss
+        entropy_loss = tr_entropy_loss_func(att_w)
+
+        # period loss (USING DATALOADER INDEX)
+        period_loss = F.cross_entropy(recon_index, img_index)
+
+        # entropy 0.0002  period 0.02
+
+        total_loss = recon_loss + (0.0002)*entropy_loss + (0.02)*period_loss
+
+
+    psnr_records[video_name].append(total_loss) # replaced psnr(mse) with total loss
     gt_records[video_name].append(gt_label)
 
     if active_video==None or active_video!=video_name:
@@ -112,8 +126,8 @@ for k, data_dict in enumerate(test_batch):
     
     frame_counter+=1
 
-    # if k%50 == 0:
-    if frame_counter%50 == 0:
+    if k%50 == 0:
+    # if frame_counter%50 == 0:
 
 
         label_str = "anomaly" if gt_label == 1 else "normal"
@@ -169,8 +183,12 @@ if args.print_time:
 
 # 5. Summary Plotting (One per Video)
 for vid_name in psnr_records.keys():
-    # Convert PSNR to local anomaly scores for plotting
-    vid_scores = anomaly_score_list(psnr_records[vid_name])
+    # anomaly_score_list normalizes the scores for plotting 
+    # this function doesn't calculate psnr
+
+    # USING  INV FUNCTION  MAKES SCORES HIGH FOR ANOMALIES AND LOW FOR NORMAL
+
+    vid_scores = anomaly_score_list_inv(psnr_records[vid_name])
     vid_gt = np.array(gt_records[vid_name])
     
     # Calculate Rectangle segments for pink highlighting

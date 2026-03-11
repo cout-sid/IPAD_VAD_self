@@ -467,8 +467,8 @@ if args.start_epoch < args.epochs:
                 print('Loss: {:.6f}'.format(loss.item()))
                 print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
             
-            # if j==5:
-            #     break
+            if j==5:
+                break
 
             pbar.set_postfix(batch=j)
 
