@@ -78,8 +78,8 @@ frame_counter = 0
 tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
-    if k%100!=0:
-        continue
+    # if k%100!=0:
+    #     continue
 
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
@@ -126,8 +126,8 @@ for k, data_dict in enumerate(test_batch):
     
     frame_counter+=1
 
-    if k%50 == 0:
-    # if frame_counter%50 == 0:
+    # if k%50 == 0:
+    if frame_counter%50 == 0:
 
 
         label_str = "anomaly" if gt_label == 1 else "normal"
