@@ -117,7 +117,7 @@ for k, data_dict in enumerate(test_batch):
         total_loss = recon_loss + (0.0002)*entropy_loss + (0.02)*period_loss
 
 
-    psnr_records[video_name].append(total_loss) # replaced psnr(mse) with total loss
+    psnr_records[video_name].append(total_loss.item()) # replaced psnr(mse) with total loss
     gt_records[video_name].append(gt_label)
 
     if active_video==None or active_video!=video_name:
