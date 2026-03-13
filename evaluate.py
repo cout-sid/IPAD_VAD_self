@@ -175,7 +175,7 @@ for vid in psnr_records.keys():
 
 # anomaly_score_list usually scales PSNR to [0, 1] anomaly scores
 anomaly_scores = anomaly_score_list(all_psnrs) 
-accuracy = AUC(anomaly_scores, np.expand_dims(1 - np.array(all_gt), 0))
+accuracy = AUC(anomaly_scores, np.expand_dims(np.array(all_gt), 0))   # we 1-np.array(all_gt) prev with psnr
 
 print(f'\nAUC: {accuracy*100:.2f}%')
 if args.print_time:
@@ -188,7 +188,7 @@ for vid_name in psnr_records.keys():
 
     # USING  INV FUNCTION  MAKES SCORES HIGH FOR ANOMALIES AND LOW FOR NORMAL
 
-    vid_scores = anomaly_score_list_inv(psnr_records[vid_name])
+    vid_scores = anomaly_score_list(psnr_records[vid_name])
     vid_gt = np.array(gt_records[vid_name])
     
     # Calculate Rectangle segments for pink highlighting

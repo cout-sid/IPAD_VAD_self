@@ -46,10 +46,10 @@ def point_score(outputs, imgs):
     return score
     
 def anomaly_score(psnr, max_psnr, min_psnr):
-    return ((psnr - min_psnr) / (max_psnr-min_psnr))
+    return ((psnr - min_psnr) / (max_psnr-min_psnr+ 1e-8))
 
 def anomaly_score_inv(psnr, max_psnr, min_psnr):
-    return (1.0 - ((psnr - min_psnr) / (max_psnr-min_psnr)))
+    return (1.0 - ((psnr - min_psnr) / (max_psnr-min_psnr+ 1e-8)))
 
 def anomaly_score_list(psnr_list):
     anomaly_score_list = list()
