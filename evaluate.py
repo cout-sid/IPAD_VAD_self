@@ -114,10 +114,10 @@ for k, data_dict in enumerate(test_batch):
 
         # entropy 0.0002  period 0.02
 
-        total_loss = recon_loss + (0.0002)*entropy_loss + (0.02)*period_loss
+        # total_loss = recon_loss + (0.0002)*entropy_loss + (0.02)*period_loss
 
 
-    psnr_records[video_name].append(total_loss.item()) # replaced psnr(mse) with total loss
+    psnr_records[video_name].append(psnr(recon_loss)) # replaced psnr(recon_loss) with total loss.item()
     gt_records[video_name].append(gt_label)
 
     if active_video==None or active_video!=video_name:
@@ -175,7 +175,7 @@ for vid in psnr_records.keys():
 
 # anomaly_score_list usually scales PSNR to [0, 1] anomaly scores
 anomaly_scores = anomaly_score_list(all_psnrs) 
-accuracy = AUC(anomaly_scores, np.expand_dims(np.array(all_gt), 0))   # we 1-np.array(all_gt) prev with psnr
+accuracy = AUC(anomaly_scores, np.expand_dims(1-np.array(all_gt), 0))   # we 1-np.array(all_gt) prev with psnr
 
 print(f'\nAUC: {accuracy*100:.2f}%')
 if args.print_time:
