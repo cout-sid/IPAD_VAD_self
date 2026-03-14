@@ -16,8 +16,8 @@ from tqdm.notebook import tqdm
 
 import argparse
 
-# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --epochs 2 --num_workers 0
-# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0
+# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --epochs 2 --num_workers 4
+# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 4
 
 parser = argparse.ArgumentParser(description="STEAL Net")
 parser.add_argument('--model', type=str, default='VST', choices=['VST','conAE'])
@@ -88,7 +88,7 @@ img_extension = '.tif' if args.dataset_type == 'ped1' else '.jpg'
 print('ccccccccccccccccccccccccccccccccccccc')
 print("BEFORE TRAIN DATASET")
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
-                                           resize_height=args.h, resize_width=args.w, num_frames=8, dataset=args.dataset_type, img_extension=img_extension)
+                                           resize_height=args.h, resize_width=args.w, num_frames=16, dataset=args.dataset_type, img_extension=img_extension)
 print('ccccccccccccccccccccccccccccccccccccc')
 print("TRAIN DATASET LOADED")
 # train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
@@ -319,26 +319,38 @@ if args.start_epoch < args.epochs:
             loss_recon_epoch = 0
             total_loss_epoch=0
 
+            for b in range(args.batch_size):
+                # if jump_inpainting_pseudo_stat[b]:
+                #     modified_loss_mse.append(torch.mean(loss_func_mse(outputs[b], imgsjump[1][b].to(outputs.device))))
+                #     pseudolossepoch += modified_loss_mse[-1].cpu().detach().item()
+                #     pseudolosscounter += 1
 
-            # for b in range(args.batch_size):
+                # else:  # no pseudo anomaly or cifar_inpainting_pseudo_stat[b] or cifar_inpainting_smooth_pseudo_stat[b] or cifar_inpainting_smoothborder_pseudo_stat[b] or ped2_inpainting_smoothborder_pseudo_stat[b] or shanghai_inpainting_smoothborder_pseudo_stat[b] or cifar_inpainting_cutmix_pseudo_stat[b] or cifar_inpainting_mixupcutmix_pseudo_stat[b]
 
-            #     modified_loss_mse.append(torch.mean(loss_mse[b]))
-            #     lossepoch += modified_loss_mse[-1].cpu().detach().item()
-            #     # lossepoch += torch.mean
-            #     losscounter += 1
+                #     if cifar_inpainting_smooth_pseudo_stat[b] or cifar_inpainting_smoothborder_pseudo_stat[b] or imagenet_inpainting_smoothborder_pseudo_stat[b] or ped2_inpainting_smoothborder_pseudo_stat[b] or shanghai_inpainting_smoothborder_pseudo_stat[b] or cifar_inpainting_cutmix_pseudo_stat[b] or cifar_inpainting_mixupcutmix_pseudo_stat[b] or SW_video_inpainting_smoothborder_pseudo_stat[b] or VAD_inpainting_smoothborder_pseudo_stat[b]:
+                #         new_loss_mse = loss_func_mse(outputs[b], imgs.cuda()[b])
+                #         modified_loss_mse.append(torch.mean(new_loss_mse))
+                #         pseudolossepoch += modified_loss_mse[-1].cpu().detach().item()
+                #         pseudolosscounter += 1
+                #     else:
+                #         modified_loss_mse.append(torch.mean(loss_mse[b]))
+                #         lossepoch += modified_loss_mse[-1].cpu().detach().item()
+                #         losscounter += 1
 
-            # assert len(modified_loss_mse) == loss_mse.size(0)
-            # stacked_loss_mse = torch.stack(modified_loss_mse)
-            # loss_recon = torch.mean(stacked_loss_mse)
+                modified_loss_mse.append(torch.mean(loss_mse[b]))
+                lossepoch += modified_loss_mse[-1].cpu().detach().item()
+                losscounter += 1
 
+            assert len(modified_loss_mse) == loss_mse.size(0)
+            stacked_loss_mse = torch.stack(modified_loss_mse)
+            loss_recon = torch.mean(stacked_loss_mse)
 
+            # loss_recon = loss_mse
+            # loss_recon_epoch+=loss_recon.item()
+            # losscounter+=1
 
-            loss_recon = pixel_loss.mean()
             loss = loss_recon + loss_entropy + loss_period
-
-            loss_recon_epoch += loss_recon.item()
-            total_loss_epoch += loss.item()
-            losscounter += 1
+            total_loss_epoch+=loss.item()
 
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
             optimizer.zero_grad()
@@ -350,8 +362,8 @@ if args.start_epoch < args.epochs:
                 print('Loss: {:.6f}'.format(loss.item()))
                 print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
             
-            # if j==5:
-            #     break
+            if j==5:
+                break
 
             pbar.set_postfix(batch=j)
 
@@ -361,7 +373,7 @@ if args.start_epoch < args.epochs:
         #     print('PseudoMeanLoss: Reconstruction {:.9f}'.format(pseudolossepoch/pseudolosscounter))
         if losscounter != 0:
             # print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
-            meanloss=loss_recon_epoch/losscounter
+            meanloss=lossepoch/losscounter
             totalloss=total_loss_epoch/losscounter
             print('MeanLoss: Reconstruction {:.9f}'.format(meanloss))
             print("Overall loss per clip per epoch: {:.9f}".format(totalloss))
@@ -381,29 +393,10 @@ if args.start_epoch < args.epochs:
         if epoch == args.epochs-1:
             torch.save(model_dict, os.path.join(log_dir, 'model_final.pth'))
             
-# print("RECONSTRUCTION MEAN FOR EPOCHS")
-# print(epoch_mean_list)
-# print("TOTAL LOSS FOR EPOCHS")
-# print(epoch_overall_list)
-
-# Plot Epoch vs Loss
-epochs = list(range((args.start_epoch) + 1, (args.epochs) + 1))
-
-plt.figure()
-plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
-plt.plot(epochs, epoch_overall_list, label="Total Loss")
-
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("Training Loss vs Epoch")
-plt.legend()
-plt.grid(True)
-
-# Save plot
-plt.savefig(os.path.join(log_dir, "loss_vs_epoch.png"))
-
-# Show plot
-# plt.show()
+print("RECONSTRUCTION MEAN FOR EPOCHS")
+print(epoch_mean_list)
+print("TOTAL LOSS FOR EPOCHS")
+print(epoch_overall_list)
 
 toc = time.time()
 print('Training is finished')
