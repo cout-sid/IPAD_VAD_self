@@ -176,7 +176,7 @@ if args.start_epoch < args.epochs:
     if args.model_dir is not None:
         assert args.start_epoch > 0
         # Loading the trained model
-        model_dict = torch.load(args.model_dir)
+        model_dict = torch.load(args.model_dir, weights_only=False)
         model_weight = model_dict['model']
         model.load_state_dict(model_weight.state_dict())
         optimizer.load_state_dict(model_dict['optimizer'])
@@ -194,8 +194,6 @@ if args.start_epoch < args.epochs:
         pseudolosscounter = 0
         losscounter = 0
 
-        # for j, (imgs, imgsjump) in enumerate(zip(train_batch, train_batch_jump)):
-        # for j, imgs in enumerate(train_batch):
 
         patch_size = 8
         high_ratio = 0.7        # top 50%
