@@ -118,67 +118,76 @@ class Reconstruction3DDecoder(nn.Module):
 #         return x
     
 class VST3DDecoder(nn.Module):
+    """
+    Decoder for 8-frame input.
+    Encoder output: (B, 768, 2, 8, 8) → target: (B, C, 8, 256, 256)
+
+    Temporal:  2 → 4 → 8 → 8 → 8 → 8  (upsample first 2 stages, then hold)
+    Spatial:   8 →16 →32 →64 →128→256  (upsample every stage)
+    """
+
     def __init__(self, chnum_out):
         super().__init__()
-
         self.chnum_out = chnum_out
 
-        # -------- Upsample stages --------
+        # Stage 1: (768, 2, 8, 8) → (384, 4, 16, 16)  [temporal + spatial upsample]
         self.up1 = nn.Sequential(
-            nn.ConvTranspose3d(768, 512, 3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm3d(512),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.ConvTranspose3d(768, 384, kernel_size=3,
+                               stride=(2,2,2), padding=1, output_padding=1),
+            nn.BatchNorm3d(384),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(384, 384, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
+        # Stage 2: (384, 4, 16, 16) → (256, 8, 32, 32)  [temporal + spatial upsample]
         self.up2 = nn.Sequential(
-            nn.ConvTranspose3d(512, 256, 3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose3d(384, 256, kernel_size=3,
+                               stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(256),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(256, 256, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
+        # Stage 3: (256, 8, 32, 32) → (128, 8, 64, 64)  [spatial only]
         self.up3 = nn.Sequential(
-            nn.ConvTranspose3d(256, 128, 3, stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+            nn.ConvTranspose3d(256, 128, kernel_size=(3,3,3),
+                               stride=(1,2,2), padding=(1,1,1),
+                               output_padding=(0,1,1)),
             nn.BatchNorm3d(128),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(128, 128, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
+        # Stage 4: (128, 8, 64, 64) → (64, 8, 128, 128)  [spatial only]
         self.up4 = nn.Sequential(
-            nn.ConvTranspose3d(128, 96, 3, stride=(1,2,2), padding=1, output_padding=(0,1,1)),
-            nn.BatchNorm3d(96),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.ConvTranspose3d(128, 64, kernel_size=(3,3,3),
+                               stride=(1,2,2), padding=(1,1,1),
+                               output_padding=(0,1,1)),
+            nn.BatchNorm3d(64),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(64, 64, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
-        self.up5 = nn.ConvTranspose3d(
-            96, chnum_out, 3, stride=(1,2,2), padding=1, output_padding=(0,1,1)
-        )
-
-        # -------- Projection layers for residual alignment --------
-        self.proj_x = nn.Conv3d(768, 256, 1)   # align x → up2
-        self.proj_up2 = nn.Conv3d(256, 96, 1)  # align up2 → up4
-
-        self.final = nn.Sequential(
-            nn.Conv3d(chnum_out, chnum_out, 3, padding=1),
-            nn.Tanh()
+        # Stage 5: (64, 8, 128, 128) → (C, 8, 256, 256)  [spatial only]
+        self.up5 = nn.Sequential(
+            nn.ConvTranspose3d(64, 32, kernel_size=(3,3,3),
+                               stride=(1,2,2), padding=(1,1,1),
+                               output_padding=(0,1,1)),
+            nn.BatchNorm3d(32),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(32, chnum_out, kernel_size=3, padding=1),
+            nn.Tanh(),
         )
 
     def forward(self, x):
-
-        x1 = self.up1(x)
-        x2 = self.up2(x1)
-
-        # residual: up2 + projected x
-        x2 = x2 + self.proj_x(
-            torch.nn.functional.interpolate(x, size=x2.shape[2:], mode="trilinear", align_corners=False)
-        )
-
-        x3 = self.up3(x2)
-        x4 = self.up4(x3)
-
-        # residual: up4 + projected up2
-        x4 = x4 + self.proj_up2(
-            torch.nn.functional.interpolate(x2, size=x4.shape[2:], mode="trilinear", align_corners=False)
-        )
-
-        x5 = self.up5(x4)
-
-        return self.final(x5)
+        # x: (B, 768, 2, 8, 8)
+        x = self.up1(x)   # (B, 384, 4, 16, 16)
+        x = self.up2(x)   # (B, 256, 8, 32, 32)
+        x = self.up3(x)   # (B, 128, 8, 64, 64)
+        x = self.up4(x)   # (B,  64, 8, 128, 128)
+        x = self.up5(x)   # (B,   C, 8, 256, 256)
+        return x
