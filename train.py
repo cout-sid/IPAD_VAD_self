@@ -52,8 +52,8 @@ parser.add_argument('--max_size', type=float, default=0.2, help='maximum size of
 parser.add_argument('--max_move', type=int, default=0, help='maximum movement in pixel of the patch to the input (hyperparameter beta)')
 
 parser.add_argument('--print_all', action='store_true', help='print all reconstruction loss')
-parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.0002, help='entropy loss weight')
-parser.add_argument('--Period_Loss_Weight', type=float, default=0.02, help='period loss weight')
+parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='entropy loss weight')
+parser.add_argument('--Period_Loss_Weight', type=float, default=0.002, help='period loss weight')
 
 ##################
 
@@ -329,9 +329,10 @@ if args.start_epoch < args.epochs:
             # stacked_loss_mse = torch.stack(modified_loss_mse)
             # loss_recon = torch.mean(stacked_loss_mse)
 
+            mid = pixel_loss.shape[2] // 2
+            loss_recon = pixel_loss[:, :, mid, :, :].mean()
 
-
-            loss_recon = pixel_loss.mean()
+            # loss_recon = pixel_loss.mean()
             loss = loss_recon + loss_entropy + loss_period
 
             loss_recon_epoch += loss_recon.item()
