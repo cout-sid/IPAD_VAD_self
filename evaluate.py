@@ -23,6 +23,8 @@ parser.add_argument('--dataset_path', type=str, required=True)
 parser.add_argument('--model_dir', type=str, required=True)
 parser.add_argument('--num_workers', type=int, default=2, help='number of workers for the train loader')
 parser.add_argument('--print_time', action='store_true')
+parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
+
 
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -54,7 +56,7 @@ label_folder = os.path.join(args.dataset_path, 'test_label')
 test_dataset = TestDataLoader(
     test_folder, label_folder, 
     transforms.Compose([transforms.ToTensor()]),
-    resize_height=args.h, resize_width=args.w, num_frames=8,
+    resize_height=args.h, resize_width=args.w, num_frames=args.num_frames,
     dataset=args.dataset_type
 )
 

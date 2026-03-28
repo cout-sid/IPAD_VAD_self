@@ -54,7 +54,7 @@ parser.add_argument('--max_move', type=int, default=0, help='maximum movement in
 parser.add_argument('--print_all', action='store_true', help='print all reconstruction loss')
 parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='entropy loss weight')
 parser.add_argument('--Period_Loss_Weight', type=float, default=0.002, help='period loss weight')
-
+parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
 ##################
 
 args = parser.parse_args()
@@ -88,7 +88,7 @@ img_extension = '.tif' if args.dataset_type == 'ped1' else '.jpg'
 print('ccccccccccccccccccccccccccccccccccccc')
 print("BEFORE TRAIN DATASET")
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
-                                           resize_height=args.h, resize_width=args.w, num_frames=16, dataset=args.dataset_type, img_extension=img_extension)
+                                           resize_height=args.h, resize_width=args.w, num_frames=args.num_frames, dataset=args.dataset_type, img_extension=img_extension)
 print('ccccccccccccccccccccccccccccccccccccc')
 print("TRAIN DATASET LOADED")
 # train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
