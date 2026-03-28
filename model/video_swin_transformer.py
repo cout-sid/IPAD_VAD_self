@@ -1,5 +1,5 @@
 import torch
-from .reconstruction_model import Reconstruction3DEncoder, Reconstruction3DDecoder, VST3DDecoder
+from .reconstruction_model import Reconstruction3DEncoder, Reconstruction3DDecoder, VST3DDecoder,VST3DDecoder_sixteen
 from .VST_block import SwinTransformer3D
 from einops import rearrange
 from model import MemModule
@@ -54,7 +54,7 @@ class VST(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(2048,200),
         )
-        self.transformer_decoder = VST3DDecoder(chnum_out=3)
+        self.transformer_decoder = VST3DDecoder_sixteen(chnum_out=3)
         # self.encoder = Reconstruction3DEncoder(chnum_in=3)  # RGB
         # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
 
@@ -65,9 +65,9 @@ class VST(torch.nn.Module):
         feature = self.transformer_encoder(x)
         # print(f"Shape of input:{x.shape}")
 
-        # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         # print("model debugging")
-        # print(f"printing the shape of feature  of VST model {feature.shape}")
+        print(f"printing the shape of feature  of VST model {feature.shape}")
         #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
 
         #wavelet transform
