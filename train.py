@@ -53,7 +53,7 @@ parser.add_argument('--max_move', type=int, default=0, help='maximum movement in
 
 parser.add_argument('--print_all', action='store_true', help='print all reconstruction loss')
 parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='entropy loss weight')
-parser.add_argument('--Period_Loss_Weight', type=float, default=0.002, help='period loss weight')
+parser.add_argument('--Period_Loss_Weight', type=float, default=0.00002, help='period loss weight')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
 ##################
 
@@ -71,6 +71,16 @@ exp_dir += '_'
 exp_dir += args.model
 exp_dir += '_weight'
 exp_dir += '_recon_256'
+
+
+
+# 2. Print them beautifully
+print("-" * 50)
+print(f"{'Training Arguments':^50}")
+print("-" * 50)
+for key, value in vars(args).items():
+    print(f"{key:<25}: {value}")
+print("-" * 50)
 
 
 
