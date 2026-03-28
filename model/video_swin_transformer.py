@@ -65,9 +65,9 @@ class VST(torch.nn.Module):
         feature = self.transformer_encoder(x)
         # print(f"Shape of input:{x.shape}")
 
-        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         # print("model debugging")
-        print(f"printing the shape of feature  of VST model {feature.shape}")
+        # print(f"printing the shape of feature  of VST model {feature.shape}")
         #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
 
         #wavelet transform
