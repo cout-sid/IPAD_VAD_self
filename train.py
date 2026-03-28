@@ -185,6 +185,8 @@ if args.start_epoch < args.epochs:
 
     epoch_mean_list=[]
     epoch_overall_list=[]
+    epoch_entropy_list = []
+    epoch_period_list = []
 
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
@@ -193,6 +195,11 @@ if args.start_epoch < args.epochs:
         lossepoch = 0
         pseudolosscounter = 0
         losscounter = 0
+
+        loss_recon_epoch = 0
+        total_loss_epoch = 0
+        loss_entropy_epoch = 0
+        loss_period_epoch = 0
 
 
         patch_size = 8
@@ -220,17 +227,7 @@ if args.start_epoch < args.epochs:
             img_index = img_index.to(device)
             # len=batch_size index
 
-            jump_inpainting_pseudo_stat = []
-            cifar_inpainting_smooth_pseudo_stat = []
-            cifar_inpainting_smoothborder_pseudo_stat = []
-            cifar_inpainting_cutmix_pseudo_stat = []
-            cifar_inpainting_mixupcutmix_pseudo_stat = []
-            ped2_inpainting_smoothborder_pseudo_stat = []
-            SW_video_inpainting_smoothborder_pseudo_stat = []
-            VAD_inpainting_smoothborder_pseudo_stat = []
-            imagenet_inpainting_smoothborder_pseudo_stat = []
-            shanghai_inpainting_smoothborder_pseudo_stat = []
-            cls_labels = []
+
 
             for b in range(args.batch_size):
                 total_pseudo_prob = 0
@@ -239,51 +236,6 @@ if args.start_epoch < args.epochs:
 
 
 
-            B, C, D, H, W = net_in.shape
-            Hp = H // patch_size
-            Wp = W // patch_size
-
-            with torch.no_grad():
-                saliency = batch_temporal_gradient_saliency(net_in)  # (B,1,D,H,W)
-
-    # temporal aggregation → spatial importance
-                sal_spatial = saliency.mean(dim=2)  # (B,1,H,W)
-
-    # -----------------------------
-    # 2. Patch-level saliency
-    # -----------------------------
-                patch_sal = F.adaptive_avg_pool2d(
-                    sal_spatial.squeeze(1),  # (B,H,W)
-                    (Hp, Wp)
-                )  # (B,Hp,Wp)
-
-                patch_sal_flat = patch_sal.view(B, -1)  # (B,Hp*Wp)
-
-    # -----------------------------
-    # 3. Rank patches
-    # -----------------------------
-                num_patches = Hp * Wp
-                k = int(high_ratio * num_patches)
-
-                weights_patch = torch.full(
-                    (B, num_patches),
-                    low_weight,
-                    device=net_in.device
-                )
-
-                for b in range(B):
-                    _, idx = torch.topk(patch_sal_flat[b], k, largest=True)
-                    weights_patch[b, idx] = 1.0
-
-    # -----------------------------
-    # 4. Expand to tube weights
-    # -----------------------------
-                weights_patch = weights_patch.view(B, 1, 1, Hp, Wp)
-                weights_tube = F.interpolate(
-                    weights_patch,
-                    size=(D, H, W),
-                    mode="nearest"
-                )  # (B,1,D,H,W)
 
             ########## TRAIN GENERATOR
             # net_in (batch_size,3,num_frames,H,W)
@@ -296,7 +248,7 @@ if args.start_epoch < args.epochs:
             entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
             entropy_loss_val = entropy_loss.item()
             loss_entropy = entropy_loss_weight * entropy_loss
-            cls_labels = torch.Tensor(cls_labels).unsqueeze(1).to(device)
+
             #recon loss
             # loss_mse = loss_func_mse(outputs, net_in)
 
@@ -313,11 +265,9 @@ if args.start_epoch < args.epochs:
             
             loss_period = loss_period * period_loss_weight
 
+
+
             modified_loss_mse = []
-            loss_recon_epoch = 0
-            total_loss_epoch=0
-
-
             # for b in range(args.batch_size):
 
             #     modified_loss_mse.append(torch.mean(loss_mse[b]))
@@ -336,6 +286,8 @@ if args.start_epoch < args.epochs:
             loss = loss_recon + loss_entropy + loss_period
 
             loss_recon_epoch += loss_recon.item()
+            loss_entropy_epoch += loss_entropy.item()
+            loss_period_epoch += loss_period.item()
             total_loss_epoch += loss.item()
             losscounter += 1
 
@@ -361,12 +313,25 @@ if args.start_epoch < args.epochs:
         if losscounter != 0:
             # print('MeanLoss: Reconstruction {:.9f}'.format(lossepoch/losscounter))
             meanloss=loss_recon_epoch/losscounter
+            mean_entropy = loss_entropy_epoch / losscounter
+            mean_period = loss_period_epoch / losscounter
             totalloss=total_loss_epoch/losscounter
+
             print('MeanLoss: Reconstruction {:.9f}'.format(meanloss))
             print("Overall loss per clip per epoch: {:.9f}".format(totalloss))
+            print('MeanLoss: Entropy {:.9f}'.format(mean_entropy))
+            print('MeanLoss: Period {:.9f}'.format(mean_period))
+
 
             epoch_mean_list.append(round(meanloss, 9))
+            epoch_entropy_list.append(round(mean_entropy, 9))
+            epoch_period_list.append(round(mean_period, 9))
             epoch_overall_list.append(round(totalloss, 9))
+
+
+
+
+
 
         # Save the model and the memory items
         model_dict = {
@@ -390,6 +355,8 @@ epochs = list(range((args.start_epoch) + 1, (args.epochs) + 1))
 
 plt.figure()
 plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
+plt.plot(epochs, epoch_entropy_list, label="Entropy Loss (weighted)")
+plt.plot(epochs, epoch_period_list, label="Period Loss (weighted)")
 plt.plot(epochs, epoch_overall_list, label="Total Loss")
 
 plt.xlabel("Epoch")

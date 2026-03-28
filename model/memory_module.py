@@ -55,7 +55,7 @@ class MemoryUnit(nn.Module):
             # Apply the boost specifically to batch 'b'
             att_weight[b, :, start:end] += att_weight[b, :, start:end].clone() * s
         
-        # Flatten back to original shape for the rest of the logic
+        # Flatten back to original shape for the rest of the logic ->(TxM) where T is not temporal dim
         att_weight = att_weight.view(-1, self.mem_dim)
         att_weight = F.softmax(att_weight, dim=1)
 
