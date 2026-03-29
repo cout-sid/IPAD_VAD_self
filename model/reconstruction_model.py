@@ -205,7 +205,7 @@ class VST3DDecoder_sixteen(nn.Module):
     Spatial:   8 →16 →32 →64 →128→256  (upsample every stage)
     """
 
-    def __init__(self, chnum_out):
+    def __init__(self, chnum_out, dropout=0.1):
         super().__init__()
         self.chnum_out = chnum_out
 
@@ -215,6 +215,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(384),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(384, 384, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
@@ -225,6 +226,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(256, 256, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
@@ -236,6 +238,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                output_padding=(0,1,1)),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(128, 128, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
@@ -247,6 +250,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                output_padding=(0,1,1)),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(64, 64, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )

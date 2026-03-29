@@ -9,6 +9,7 @@ from utils import *
 # from model.pseudoanomaly_utils import create_pseudoanomaly_cifar_smooth, \
 #     create_pseudoanomaly_cifar_smoothborder, create_pseudoanomaly_seq_smoothborder, \
 #     create_pseudoanomaly_cifar_cutmix, create_pseudoanomaly_cifar_mixupcutmix
+from torch.utils.data import random_split
 
 import time
 from model import EntropyLossEncap
@@ -137,12 +138,36 @@ def batch_temporal_gradient_saliency(clips):
 
     return saliency.unsqueeze(1)  # (B,1,D,H,W)
 
-train_size = len(train_dataset)
+# train_size = len(train_dataset)
 
-train_batch = data.DataLoader(train_dataset, batch_size=args.batch_size,
+
+
+
+# --- Train/Val split for early stopping ---
+
+
+val_ratio = 0.10
+val_size = int(len(train_dataset) * val_ratio)
+train_size = len(train_dataset) - val_size
+
+train_subset, val_subset = random_split(train_dataset, [train_size, val_size],
+                                         generator=torch.Generator().manual_seed(42))
+
+train_batch = data.DataLoader(train_subset, batch_size=args.batch_size,
                               shuffle=True, num_workers=args.num_workers, drop_last=True)
-# train_batch_jump = data.DataLoader(train_dataset_jump, batch_size=args.batch_size,
-#                                    shuffle=True, num_workers=args.num_workers, drop_last=True)
+
+val_batch = data.DataLoader(val_subset, batch_size=args.batch_size,
+                            shuffle=False, num_workers=args.num_workers, drop_last=False)
+
+print(f"Train: {len(train_subset)} samples, Val: {len(val_subset)} samples")
+
+# Early stopping config
+patience = 5          # stop after 5 epochs with no improvement
+best_val_loss = float('inf')
+epochs_no_improve = 0
+best_epoch = 0
+
+
 
 # Report the training process
 log_dir = os.path.join('./exp', exp_dir)
@@ -354,6 +379,48 @@ if args.start_epoch < args.epochs:
 
         if epoch == args.epochs-1:
             torch.save(model_dict, os.path.join(log_dir, 'model_final.pth'))
+
+        # ---------------------------------------------------------
+        # --- Validation for early stopping ---
+        # ---------------------------------------------------------
+
+
+        model.eval()
+        val_loss_total = 0
+        val_count = 0
+
+        with torch.no_grad():
+            for val_imgs in val_batch:
+                val_in = val_imgs['batch'].to(device)
+                val_out = model(val_in)
+                val_recon = val_out['output']
+
+                mid = val_in.shape[2] // 2
+                val_mse = loss_func_mse(val_recon[:, :, mid], val_in[:, :, mid]).mean().item()
+                val_loss_total += val_mse
+                val_count += 1
+
+        val_loss_avg = val_loss_total / val_count
+        print(f'Validation MSE (middle frame): {val_loss_avg:.9f}')
+
+        # Check for improvement
+        if val_loss_avg < best_val_loss:
+            best_val_loss = val_loss_avg
+            best_epoch = epoch + 1
+            epochs_no_improve = 0
+            # Save best model
+            torch.save(model_dict, os.path.join(log_dir, 'model_best.pth'))
+            print(f'New best model saved (epoch {best_epoch})')
+        else:
+            epochs_no_improve += 1
+            print(f'No improvement for {epochs_no_improve}/{patience} epochs')
+
+        if epochs_no_improve >= patience:
+            print(f'\nEarly stopping triggered at epoch {epoch + 1}')
+            print(f'Best epoch was {best_epoch} with val MSE {best_val_loss:.9f}')
+            break
+
+        model.train()
             
 # print("RECONSTRUCTION MEAN FOR EPOCHS")
 # print(epoch_mean_list)
@@ -407,11 +474,11 @@ loss_func_mse_val = nn.MSELoss(reduction='none')
 print("\n--- Validation: Reconstructing training samples ---")
 
 for idx in validate_indices:
-    if idx >= len(train_dataset):
-        print(f"  Skipping index {idx} (dataset has {len(train_dataset)} samples)")
+    if idx >= len(train_subset):
+        print(f"  Skipping index {idx} (dataset has {len(train_subset)} samples)")
         continue
 
-    sample = train_dataset[idx]
+    sample = train_subset[idx]
     imgs = torch.tensor(sample['batch']).unsqueeze(0).to(device)  # (1, 3, 8, 256, 256)
 
     with torch.no_grad():
