@@ -389,3 +389,58 @@ f.close()
 
 
 
+#-----------------------------------------
+#  validation part
+# -----------------------------------------
+
+
+
+
+# --- Validate reconstruction on specific training samples ---
+validate_indices = [ 50, 100, 200, 500]  # change these to whatever you want
+validate_dir =  "validate_images"
+os.makedirs(validate_dir, exist_ok=True)
+
+model.eval()
+loss_func_mse_val = nn.MSELoss(reduction='none')
+
+print("\n--- Validation: Reconstructing training samples ---")
+
+for idx in validate_indices:
+    if idx >= len(train_dataset):
+        print(f"  Skipping index {idx} (dataset has {len(train_dataset)} samples)")
+        continue
+
+    sample = train_dataset[idx]
+    imgs = torch.tensor(sample['batch']).unsqueeze(0).to(device)  # (1, 3, 8, 256, 256)
+
+    with torch.no_grad():
+        outputs = model(imgs)
+        recon_frame = outputs['output']
+
+    mid_idx = imgs.shape[2] // 2
+
+    # MSE
+    mse_val = loss_func_mse_val(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx]).mean().item()
+    print(f"  Sample {idx}: MSE = {mse_val:.8f}")
+
+    # Original
+    orig_img = (imgs[0, :, mid_idx].cpu().numpy() + 1) * 127.5
+    orig_img = orig_img.transpose(1, 2, 0).astype(np.uint8)
+
+    # Reconstruction
+    recon_img = (recon_frame[0, :, mid_idx].cpu().numpy() + 1) * 127.5
+    recon_img = recon_img.transpose(1, 2, 0).astype(np.uint8)
+
+    # Heatmap
+    diff = cv2.absdiff(orig_img, recon_img)
+    diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+    diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX)
+    heatmap = cv2.applyColorMap(diff_norm, cv2.COLORMAP_JET)
+
+    cv2.imwrite(os.path.join(validate_dir, f"sample{idx}_original.png"), orig_img)
+    cv2.imwrite(os.path.join(validate_dir, f"sample{idx}_recon.png"), recon_img)
+    cv2.imwrite(os.path.join(validate_dir, f"sample{idx}_heatmap.png"), heatmap)
+
+model.train()
+print(f"Validation images saved to {validate_dir}/")
