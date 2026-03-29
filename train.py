@@ -56,6 +56,8 @@ parser.add_argument('--print_all', action='store_true', help='print all reconstr
 parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='entropy loss weight')
 parser.add_argument('--Period_Loss_Weight', type=float, default=0.00002, help='period loss weight')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
+parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memory bank')
+
 ##################
 
 args = parser.parse_args()
@@ -185,7 +187,7 @@ tic = time.time()
 
 if args.start_epoch < args.epochs:
     if args.model=='VST':
-        model = VST()
+        model = VST(mem_dim=args.mem_dim)
     else:
         model = convAE()
     
