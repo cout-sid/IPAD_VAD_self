@@ -185,6 +185,8 @@ loss_func_mse = nn.MSELoss(reduction='none')
 
 tic = time.time()
 
+epochs_ran = 0
+
 if args.start_epoch < args.epochs:
     if args.model=='VST':
         model = VST(mem_dim=args.mem_dim)
@@ -420,6 +422,7 @@ if args.start_epoch < args.epochs:
         if epochs_no_improve >= patience:
             print(f'\nEarly stopping triggered at epoch {epoch + 1}')
             print(f'Best epoch was {best_epoch} with val MSE {best_val_loss:.9f}')
+            epochs_ran = epoch +1
             break
 
         model.train()
@@ -430,31 +433,7 @@ if args.start_epoch < args.epochs:
 # print(epoch_overall_list)
 
 # Plot Epoch vs Loss
-epochs = list(range((args.start_epoch) + 1, (args.epochs) + 1))
 
-plt.figure()
-plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
-plt.plot(epochs, epoch_entropy_list, label="Entropy Loss (weighted)")
-plt.plot(epochs, epoch_period_list, label="Period Loss (weighted)")
-plt.plot(epochs, epoch_overall_list, label="Total Loss")
-
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("Training Loss vs Epoch")
-plt.legend()
-plt.grid(True)
-
-# Save plot
-plt.savefig(os.path.join(log_dir, "loss_vs_epoch.png"))
-
-# Show plot
-# plt.show()
-
-toc = time.time()
-print('Training is finished')
-print('Training time: ',(toc-tic))
-sys.stdout = orig_stdout
-f.close()
 
 
 
@@ -513,3 +492,31 @@ for idx in validate_indices:
 
 model.train()
 print(f"Validation images saved to {validate_dir}/")
+
+
+epochs = list(range((args.start_epoch) + 1, (epochs_ran) + 1))
+
+plt.figure()
+plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
+plt.plot(epochs, epoch_entropy_list, label="Entropy Loss (weighted)")
+plt.plot(epochs, epoch_period_list, label="Period Loss (weighted)")
+plt.plot(epochs, epoch_overall_list, label="Total Loss")
+
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.title("Training Loss vs Epoch")
+plt.legend()
+plt.grid(True)
+
+# Save plot
+plt.savefig(os.path.join(log_dir, "loss_vs_epoch.png"))
+
+# Show plot
+# plt.show()
+
+toc = time.time()
+print('Training is finished')
+print('Training time: ',(toc-tic))
+sys.stdout = orig_stdout
+f.close()
+

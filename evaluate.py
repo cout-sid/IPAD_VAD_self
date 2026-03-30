@@ -24,6 +24,7 @@ parser.add_argument('--model_dir', type=str, required=True)
 parser.add_argument('--num_workers', type=int, default=2, help='number of workers for the train loader')
 parser.add_argument('--print_time', action='store_true')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
+parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memory bank')
 
 
 args = parser.parse_args()
@@ -32,7 +33,7 @@ tr_entropy_loss_func = EntropyLossEncap().to(device)
 
 # 1. Load Model
 if args.model == 'VST':
-    model = VST()
+    model = VST(mem_dim=args.mem_dim)
 else:
     model = convAE()
 
