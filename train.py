@@ -282,6 +282,7 @@ if args.start_epoch < args.epochs:
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
+            motion_mask = Recon_frames['motion_mask']
 
             # memory entropy loss
             entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
@@ -297,6 +298,8 @@ if args.start_epoch < args.epochs:
 
             # loss_mse = weighted_pixel_loss.sum() / (weights_tube.sum() * C + 1e-8)
             loss_mse=pixel_loss
+
+
 
             #period loss
             loss_period = F.cross_entropy(recon_index,img_index)
@@ -319,7 +322,13 @@ if args.start_epoch < args.epochs:
             # loss_recon = torch.mean(stacked_loss_mse)
 
             mid = pixel_loss.shape[2] // 2
-            loss_recon = pixel_loss[:, :, mid, :, :].mean()
+            loss_recon_mid = pixel_loss[:, :, mid, :, :]
+
+            # Apply motion mask (broadcasts over C dimension)
+            mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
+            weighted_loss = loss_recon_mid * mask_mid   # (B, 3, H, W)
+
+            loss_recon = weighted_loss.mean()
 
             # loss_recon = pixel_loss.mean()
             loss = loss_recon + loss_entropy + loss_period
@@ -407,6 +416,8 @@ if args.start_epoch < args.epochs:
         val_loss_avg = val_loss_total / val_count
         print(f'Validation MSE (middle frame): {val_loss_avg:.9f}')
 
+        epochs_ran = epoch +1
+
         # Check for improvement
         if val_loss_avg < best_val_loss:
             best_val_loss = val_loss_avg
@@ -422,7 +433,7 @@ if args.start_epoch < args.epochs:
         if epochs_no_improve >= patience:
             print(f'\nEarly stopping triggered at epoch {epoch + 1}')
             print(f'Best epoch was {best_epoch} with val MSE {best_val_loss:.9f}')
-            epochs_ran = epoch +1
+            
             break
 
         model.train()
@@ -465,12 +476,26 @@ for idx in validate_indices:
     with torch.no_grad():
         outputs = model(imgs)
         recon_frame = outputs['output']
+        motion_mask = outputs['motion_mask']
+
 
     mid_idx = imgs.shape[2] // 2
 
+    mask_mid = motion_mask[0, 0, 0].cpu().numpy()  # (H, W)
+    
+#     # Weighted MSE for scoring
+#     pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
+#     weighted_mse = pixel_mse.mean(dim=0) * torch.tensor(mask_mid).to(device)
+#     recon_loss = weighted_mse.mean().item()
+
+
     # MSE
-    mse_val = loss_func_mse_val(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx]).mean().item()
-    print(f"  Sample {idx}: MSE = {mse_val:.8f}")
+    mask_tensor = motion_mask[0, :, 0, :, :]
+    mse_val = loss_func_mse_val(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
+    weighted_mse = (mse_val * mask_tensor).mean().item()  # .item() moves scalar to CPU
+
+    print(f"  Sample {idx}: Weighted MSE = {weighted_mse:.8f}")
+    # print(f"  Sample {idx}: MSE = {mse_val:.8f}")
 
     # Original
     orig_img = (imgs[0, :, mid_idx].cpu().numpy() + 1) * 127.5
@@ -483,7 +508,10 @@ for idx in validate_indices:
     # Heatmap
     diff = cv2.absdiff(orig_img, recon_img)
     diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-    diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX)
+
+    diff_weighted = diff_gray.astype(np.float32) * mask_mid
+
+    diff_norm = cv2.normalize(diff_weighted, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     heatmap = cv2.applyColorMap(diff_norm, cv2.COLORMAP_JET)
 
     cv2.imwrite(os.path.join(validate_dir, f"sample{idx}_original.png"), orig_img)

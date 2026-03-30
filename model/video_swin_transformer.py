@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 from .wavelet_attention import AdvancedWaveletAttention # Updated from WaveletAttention
+from .motion_attention_mask import MotionAttentionMask
 
 
 # from torch_vst_encoder import TorchVSTEncoder
@@ -59,7 +60,7 @@ class VST(torch.nn.Module):
         # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
 
         self.wavelet_att = AdvancedWaveletAttention(channels=768)
-
+        self.motion_mask = MotionAttentionMask()
 
     def forward(self, x):
         feature = self.transformer_encoder(x)
@@ -89,6 +90,13 @@ class VST(torch.nn.Module):
         # print("The shape of output after decoding")
         # print(output.shape)
 
-        return {'output': output, 'att': att, 'recon_index': recon_index}
-
+        mask, base_weight = self.motion_mask(x)
+        
+        return {
+            'output': output,
+            'att': att,
+            'recon_index': recon_index,
+            'motion_mask': mask,          # ADD THIS
+            'base_weight': base_weight,   # ADD THIS (for logging)
+        }
 
