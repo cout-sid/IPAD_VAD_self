@@ -215,7 +215,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(384),
             nn.LeakyReLU(0.2, inplace=True),
-            # nn.Dropout3d(dropout),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(384, 384, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
@@ -226,7 +226,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
-            # nn.Dropout3d(dropout),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(256, 256, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
@@ -238,7 +238,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                output_padding=(0,1,1)),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
-            # nn.Dropout3d(dropout),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(128, 128, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
@@ -250,7 +250,7 @@ class VST3DDecoder_sixteen(nn.Module):
                                output_padding=(0,1,1)),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2, inplace=True),
-            # nn.Dropout3d(dropout),
+            nn.Dropout3d(dropout),
             # nn.Conv3d(64, 64, kernel_size=3, padding=1),
             # nn.LeakyReLU(0.2, inplace=True),
         )
