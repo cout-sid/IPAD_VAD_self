@@ -14,6 +14,8 @@ from torch.utils.data import random_split
 import time
 from model import EntropyLossEncap
 from tqdm.notebook import tqdm
+import pandas as pd
+
 
 import argparse
 
@@ -419,7 +421,7 @@ if args.start_epoch < args.epochs:
         epochs_ran = epoch +1
 
         # Check for improvement
-        if val_loss_avg < best_val_loss:
+        if val_loss_avg < best_val_loss* 0.95:
             best_val_loss = val_loss_avg
             best_epoch = epoch + 1
             epochs_no_improve = 0
@@ -520,6 +522,24 @@ for idx in validate_indices:
 
 model.train()
 print(f"Validation images saved to {validate_dir}/")
+
+
+
+# 1. Combine your lists into a dictionary
+loss_data = {
+    'epoch': range(1, len(epoch_mean_list) + 1), # Automatically creates epoch numbers 1, 2, 3...
+    'mean_loss': epoch_mean_list,
+    'entropy_loss': epoch_entropy_list,
+    'period_loss': epoch_period_list,
+    'overall_loss': epoch_overall_list
+}
+
+# 2. Convert to a DataFrame and save
+df = pd.DataFrame(loss_data)
+df.to_csv('training_losses.csv', index=False)
+print("*"*50)
+print("Saved losses to training_losses.csv")
+print("*"*50)
 
 
 epochs = list(range((args.start_epoch) + 1, (epochs_ran) + 1))
