@@ -280,7 +280,7 @@ if args.start_epoch < args.epochs:
 
             ########## TRAIN GENERATOR
             # net_in (batch_size,3,num_frames,H,W)
-            Recon_frames = model.forward(net_in)
+            Recon_frames = model(net_in)
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
@@ -324,7 +324,7 @@ if args.start_epoch < args.epochs:
             # loss_recon = torch.mean(stacked_loss_mse)
 
             mid = pixel_loss.shape[2] // 2
-            loss_recon = pixel_loss[:, :, mid, :, :]
+            loss_recon = pixel_loss[:, :, mid, :, :].mean()
 
             # Apply motion mask (broadcasts over C dimension)
             # mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
