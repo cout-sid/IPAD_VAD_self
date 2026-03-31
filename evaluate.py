@@ -100,22 +100,22 @@ for k, data_dict in enumerate(test_batch):
         recon_frame = outputs['output']
         att_w = outputs['att']
         recon_index = outputs['recon_index']
-        motion_mask = outputs['motion_mask']
+        # motion_mask = outputs['motion_mask']
 
         
         # Get the temporal dimension size (dimension 2 for a B, C, D, H, W tensor)
         total_frames = imgs.shape[2] 
         mid_idx = total_frames // 2
 
-        mask_mid = motion_mask[0, 0, 0].cpu().numpy()  # (H, W)
+        # mask_mid = motion_mask[0, 0, 0].cpu().numpy()  # (H, W)
 
-        pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
-        weighted_mse = pixel_mse.mean(dim=0) * torch.tensor(mask_mid).to(device)
-        recon_loss = weighted_mse.mean().item()
+        # pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
+        # weighted_mse = pixel_mse.mean(dim=0) * torch.tensor(mask_mid).to(device)
+        # recon_loss = weighted_mse.mean().item()
 
         # Calculate MSE for the middle frame  
         # OLD ONE
-        # recon_loss = torch.mean(loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])).item()
+        recon_loss = torch.mean(loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])).item()
 
         # entropy loss
         entropy_loss = tr_entropy_loss_func(att_w)
@@ -155,8 +155,8 @@ for k, data_dict in enumerate(test_batch):
         # convert to grayscale difference
         diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         # diff_weighted = diff_gray * mask_mid
-        diff_weighted = diff_gray.astype(np.float32) * mask_mid
-        diff_norm = cv2.normalize(diff_weighted, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        # diff_weighted = diff_gray.astype(np.float32) * mask_mid
+        diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
         # normalize for visualization
         # diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX)
 

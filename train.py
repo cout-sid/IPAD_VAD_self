@@ -284,7 +284,7 @@ if args.start_epoch < args.epochs:
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
-            motion_mask = Recon_frames['motion_mask']
+            # motion_mask = Recon_frames['motion_mask']
 
             # memory entropy loss
             entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
@@ -324,15 +324,14 @@ if args.start_epoch < args.epochs:
             # loss_recon = torch.mean(stacked_loss_mse)
 
             mid = pixel_loss.shape[2] // 2
-            loss_recon_mid = pixel_loss[:, :, mid, :, :]
+            loss_recon = pixel_loss[:, :, mid, :, :]
 
             # Apply motion mask (broadcasts over C dimension)
-            mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
-            weighted_loss = loss_recon_mid * mask_mid   # (B, 3, H, W)
+            # mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
+            # weighted_loss = loss_recon_mid * mask_mid   # (B, 3, H, W)
+            # loss_recon = weighted_loss.mean()
 
-            loss_recon = weighted_loss.mean()
 
-            # loss_recon = pixel_loss.mean()
             loss = loss_recon + loss_entropy + loss_period
 
             loss_recon_epoch += loss_recon.item()
@@ -478,12 +477,12 @@ for idx in validate_indices:
     with torch.no_grad():
         outputs = model(imgs)
         recon_frame = outputs['output']
-        motion_mask = outputs['motion_mask']
+        # motion_mask = outputs['motion_mask']
 
 
     mid_idx = imgs.shape[2] // 2
 
-    mask_mid = motion_mask[0, 0, 0].cpu().numpy()  # (H, W)
+    # mask_mid = motion_mask[0, 0, 0].cpu().numpy()  # (H, W)
     
 #     # Weighted MSE for scoring
 #     pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
@@ -492,11 +491,11 @@ for idx in validate_indices:
 
 
     # MSE
-    mask_tensor = motion_mask[0, :, 0, :, :]
-    mse_val = loss_func_mse_val(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
-    weighted_mse = (mse_val * mask_tensor).mean().item()  # .item() moves scalar to CPU
+    # mask_tensor = motion_mask[0, :, 0, :, :]
+    # mse_val = loss_func_mse_val(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
+    # weighted_mse = (mse_val * mask_tensor).mean().item()  # .item() moves scalar to CPU
 
-    print(f"  Sample {idx}: Weighted MSE = {weighted_mse:.8f}")
+    # print(f"  Sample {idx}: Weighted MSE = {weighted_mse:.8f}")
     # print(f"  Sample {idx}: MSE = {mse_val:.8f}")
 
     # Original
@@ -511,9 +510,9 @@ for idx in validate_indices:
     diff = cv2.absdiff(orig_img, recon_img)
     diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
 
-    diff_weighted = diff_gray.astype(np.float32) * mask_mid
+    # diff_weighted = diff_gray.astype(np.float32) * mask_mid
 
-    diff_norm = cv2.normalize(diff_weighted, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     heatmap = cv2.applyColorMap(diff_norm, cv2.COLORMAP_JET)
 
     cv2.imwrite(os.path.join(validate_dir, f"sample{idx}_original.png"), orig_img)
