@@ -302,9 +302,9 @@ if args.start_epoch < args.epochs:
                 loss_recon = torch.tensor(0.0, device=device)
                 ssim_val = ssim(outputs[:,:,mid], net_in[:,:,mid], data_range=2.0, win_size=5,size_average=True)
                 loss_ssim = 1 - ssim_val
-                print("-"*100)
-                print("USING MIDDLE FRAME ONLY FOR ERROR")
-                print("-"*100)
+                # print("-"*100)
+                # print("USING MIDDLE FRAME ONLY FOR ERROR")
+                # print("-"*100)
 
             else:
                 # loss_recon = pixel_loss.mean()
@@ -315,9 +315,9 @@ if args.start_epoch < args.epochs:
                 out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 loss_ssim = 1 - ssim(out_flat, inp_flat, data_range=2.0, win_size=5, size_average=True)
-                print("-"*100)
-                print("USING ALL FRAMES  FOR ERROR")
-                print("-"*100)
+                # print("-"*100)
+                # print("USING ALL FRAMES  FOR ERROR")
+                # print("-"*100)
 
 
 
