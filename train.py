@@ -324,7 +324,8 @@ if args.start_epoch < args.epochs:
             # loss_recon = torch.mean(stacked_loss_mse)
 
             mid = pixel_loss.shape[2] // 2
-            loss_recon = pixel_loss[:, :, mid, :, :].mean()
+            # loss_recon = pixel_loss[:, :, mid, :, :].mean()
+            loss_recon = pixel_loss.mean()
 
             # Apply motion mask (broadcasts over C dimension)
             # mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
