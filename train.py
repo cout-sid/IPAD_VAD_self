@@ -245,10 +245,6 @@ if args.start_epoch < args.epochs:
             img_index = imgs['index'].to(device)
 
 
-            for b in range(args.batch_size):
-                total_pseudo_prob = 0
-                rand_number = np.random.rand()
-                pseudo_bool = False
 
 
 
@@ -262,9 +258,11 @@ if args.start_epoch < args.epochs:
             # motion_mask = Recon_frames['motion_mask']
 
             # memory entropy loss
-            entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
-            entropy_loss_val = entropy_loss.item()
-            loss_entropy = entropy_loss_weight * entropy_loss
+            # entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
+            # entropy_loss_val = entropy_loss.item()
+            # loss_entropy = entropy_loss_weight * entropy_loss
+            loss_entropy = torch.tensor(0.0, device=device)
+            
 
             #recon loss
             # loss_mse = loss_func_mse(outputs, net_in)
@@ -279,10 +277,9 @@ if args.start_epoch < args.epochs:
 
 
             #period loss
-            loss_period = F.cross_entropy(recon_index,img_index)
-
-            
-            loss_period = loss_period * period_loss_weight
+            # loss_period = F.cross_entropy(recon_index,img_index)
+            # loss_period = loss_period * period_loss_weight
+            loss_period=torch.tensor(0.0, device=device)
 
 
 
@@ -301,17 +298,26 @@ if args.start_epoch < args.epochs:
             mid = pixel_loss.shape[2] // 2
 
             if not args.all_frame_error:
-                loss_recon = pixel_loss[:, :, mid, :, :].mean()
+                # loss_recon = pixel_loss[:, :, mid, :, :].mean()
+                loss_recon = torch.tensor(0.0, device=device)
                 ssim_val = ssim(outputs[:,:,mid], net_in[:,:,mid], data_range=2.0, win_size=5,size_average=True)
                 loss_ssim = 1 - ssim_val
+                print("-"*100)
+                print("USING MIDDLE FRAME ONLY FOR ERROR")
+                print("-"*100)
+
             else:
-                loss_recon = pixel_loss.mean()
+                # loss_recon = pixel_loss.mean()
+                loss_recon = torch.tensor(0.0, device=device)
 
                 B, C, T, H, W = outputs.shape
                 # Merge batch and time dims → (B*T, C, H, W)
                 out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 loss_ssim = 1 - ssim(out_flat, inp_flat, data_range=2.0, win_size=5, size_average=True)
+                print("-"*100)
+                print("USING ALL FRAMES  FOR ERROR")
+                print("-"*100)
 
 
 
@@ -324,7 +330,7 @@ if args.start_epoch < args.epochs:
             
 
             # loss = loss_recon + loss_entropy + loss_period
-            loss = loss_recon + loss_ssim
+            loss = loss_ssim
 
 
 
@@ -460,7 +466,7 @@ if args.start_epoch < args.epochs:
 
 
 # --- Validate reconstruction on specific training samples ---
-validate_indices = [ 50, 100, 200, 500]  # change these to whatever you want
+validate_indices = [ 50, 100, 200, 500, 600,650,800]  # change these to whatever you want
 validate_dir =  "validate_images"
 os.makedirs(validate_dir, exist_ok=True)
 
