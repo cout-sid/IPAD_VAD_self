@@ -59,6 +59,8 @@ parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='
 parser.add_argument('--Period_Loss_Weight', type=float, default=0.00002, help='period loss weight')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
 parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memory bank')
+parser.add_argument('--all_frame_error', action='store_true', help='whether to use whole batch or only mid frame for error')
+
 
 ##################
 
@@ -110,39 +112,7 @@ print("TRAIN DATASET LOADED")
 #                                                 resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, jump=args.jump, return_normal_seq=args.pseudo_anomaly_jump_inpainting > 0, img_extension=img_extension)
 
 
-def batch_temporal_gradient_saliency(clips):
-    """
-    clips: (B, 3, D, H, W), normalized to [-1,1]
-    returns: (B, 1, D, H, W) saliency normalized to [0,1]
-    """
-    B, C, D, H, W = clips.shape
-    clips_01 = (clips + 1) / 2.0  # convert to [0,1]
 
-    saliency = torch.zeros((B, D, H, W), device=clips.device, dtype=clips.dtype)
-
-    # central temporal difference
-    for t in range(1, D-1):
-        prev_f = clips_01[:, :, t-1]
-        mid_f  = clips_01[:, :, t]
-        next_f = clips_01[:, :, t+1]
-
-        grad = (torch.abs(mid_f - prev_f) + torch.abs(next_f - mid_f)) / 2.0
-        grad = grad.mean(dim=1)  # mean across channels → scalar map
-        saliency[:, t] = grad
-
-    # forward/backward difference for edges
-    saliency[:, 0]  = torch.abs(clips_01[:,:,0]  - clips_01[:,:,1]).mean(dim=1)
-    saliency[:, -1] = torch.abs(clips_01[:,:,-1] - clips_01[:,:,-2]).mean(dim=1)
-
-    # normalize each sample
-    saliency_flat = saliency.view(B, -1)
-    sal_min = saliency_flat.min(dim=1)[0].view(B,1,1,1)
-    sal_max = saliency_flat.max(dim=1)[0].view(B,1,1,1)
-    saliency = (saliency - sal_min) / (sal_max - sal_min + 1e-8)
-
-    return saliency.unsqueeze(1)  # (B,1,D,H,W)
-
-# train_size = len(train_dataset)
 
 
 
@@ -324,16 +294,23 @@ if args.start_epoch < args.epochs:
             # loss_recon = torch.mean(stacked_loss_mse)
 
             mid = pixel_loss.shape[2] // 2
-            # loss_recon = pixel_loss[:, :, mid, :, :].mean()
-            loss_recon = pixel_loss.mean()
+
+            if not args.all_frame_error:
+                loss_recon = pixel_loss[:, :, mid, :, :].mean()
+            else:
+                loss_recon = pixel_loss.mean()
 
             # Apply motion mask (broadcasts over C dimension)
             # mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
             # weighted_loss = loss_recon_mid * mask_mid   # (B, 3, H, W)
             # loss_recon = weighted_loss.mean()
 
+            
 
-            loss = loss_recon + loss_entropy + loss_period
+            # loss = loss_recon + loss_entropy + loss_period
+            loss = loss_recon
+
+            
 
             loss_recon_epoch += loss_recon.item()
             loss_entropy_epoch += loss_entropy.item()

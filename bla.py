@@ -404,5 +404,25 @@ print('Training time: ',(toc-tic))
 sys.stdout = orig_stdout
 f.close()
 
+# xxxxxxxxxxxxxxxxxxxxxxxxxxx
+# xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 
+
+
+
+# SSIM loss on middle frame
+mid_recon = outputs[:, :, mid, :, :]   # (B, C, H, W)
+mid_target = net_in[:, :, mid, :, :]   # (B, C, H, W)
+
+# data_range depends on your normalization:
+#   if pixels are in [0, 1]  → data_range=1.0
+#   if pixels are in [-1, 1] → data_range=2.0
+ssim(recon, target, data_range=2.0, win_size=5,size_average=True)
+loss_ssim = 1 - ssim_val
+
+ssim_weight = 0.5
+loss = loss_recon + ssim_weight * loss_ssim + loss_entropy + loss_period
+
+loss_ssim_epoch += loss_ssim.item()

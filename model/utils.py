@@ -107,7 +107,7 @@ class Reconstruction3DDataLoader(data.Dataset):
         batch = []
         for i in range(self._num_frames):
             image = np_load_frame(self.videos[video_name]['frame'][frame_name + i], self._resize_height,
-                                  self._resize_width, grayscale=True)
+                                  self._resize_width, grayscale=False)
 # np_load_frame returns shape => (h,w,3)
             
             if self.transform is not None:
