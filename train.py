@@ -398,44 +398,45 @@ if args.start_epoch < args.epochs:
         # --- Validation for early stopping ---
         # ---------------------------------------------------------
 
-
-        model.eval()
-        val_loss_total = 0
-        val_count = 0
-
-        with torch.no_grad():
-            for val_imgs in val_batch:
-                val_in = val_imgs['batch'].to(device)
-                val_out = model(val_in)
-                val_recon = val_out['output']
-
-                mid = val_in.shape[2] // 2
-                val_mse = loss_func_mse(val_recon[:, :, mid], val_in[:, :, mid]).mean().item()
-                val_loss_total += val_mse
-                val_count += 1
-
-        val_loss_avg = val_loss_total / val_count
-        print(f'Validation MSE (middle frame): {val_loss_avg:.9f}')
-
         epochs_ran = epoch +1
 
-        # Check for improvement
-        if val_loss_avg < best_val_loss* 0.95:
-            best_val_loss = val_loss_avg
-            best_epoch = epoch + 1
-            epochs_no_improve = 0
-            # Save best model
-            torch.save(model_dict, os.path.join(log_dir, 'model_best.pth'))
-            print(f'New best model saved (epoch {best_epoch})')
-        else:
-            epochs_no_improve += 1
-            print(f'No improvement for {epochs_no_improve}/{patience} epochs')
+        # model.eval()
+        # val_loss_total = 0
+        # val_count = 0
 
-        if epochs_no_improve >= patience:
-            print(f'\nEarly stopping triggered at epoch {epoch + 1}')
-            print(f'Best epoch was {best_epoch} with val MSE {best_val_loss:.9f}')
+        # with torch.no_grad():
+        #     for val_imgs in val_batch:
+        #         val_in = val_imgs['batch'].to(device)
+        #         val_out = model(val_in)
+        #         val_recon = val_out['output']
+
+        #         mid = val_in.shape[2] // 2
+        #         val_mse = loss_func_mse(val_recon[:, :, mid], val_in[:, :, mid]).mean().item()
+        #         val_loss_total += val_mse
+        #         val_count += 1
+
+        # val_loss_avg = val_loss_total / val_count
+        # print(f'Validation MSE (middle frame): {val_loss_avg:.9f}')
+
+        
+
+        # # Check for improvement
+        # if val_loss_avg < best_val_loss* 0.95:
+        #     best_val_loss = val_loss_avg
+        #     best_epoch = epoch + 1
+        #     epochs_no_improve = 0
+        #     # Save best model
+        #     torch.save(model_dict, os.path.join(log_dir, 'model_best.pth'))
+        #     print(f'New best model saved (epoch {best_epoch})')
+        # else:
+        #     epochs_no_improve += 1
+        #     print(f'No improvement for {epochs_no_improve}/{patience} epochs')
+
+        # if epochs_no_improve >= patience:
+        #     print(f'\nEarly stopping triggered at epoch {epoch + 1}')
+        #     print(f'Best epoch was {best_epoch} with val MSE {best_val_loss:.9f}')
             
-            break
+        #     break
 
         model.train()
             
