@@ -15,6 +15,7 @@ import time
 from model import EntropyLossEncap
 from tqdm.notebook import tqdm
 import pandas as pd
+from pytorch_msssim import ssim
 
 
 import argparse
@@ -198,6 +199,7 @@ if args.start_epoch < args.epochs:
     epoch_overall_list=[]
     epoch_entropy_list = []
     epoch_period_list = []
+    epoch_ssim_list = []
 
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
@@ -211,6 +213,7 @@ if args.start_epoch < args.epochs:
         total_loss_epoch = 0
         loss_entropy_epoch = 0
         loss_period_epoch = 0
+        loss_ssim_epoch = 0
 
 
         patch_size = 8
@@ -226,18 +229,20 @@ if args.start_epoch < args.epochs:
         for j, imgs in enumerate(pbar):
 
             #imgs (batch_size,3,16,H,W)
-            net_in = copy.deepcopy(imgs['batch'])
+            # net_in = copy.deepcopy(imgs['batch'])
             # B, C, D, H, W = net_in.shape
             # Hp = H // patch_size
             # Wp = W // patch_size
 
             # net_in = net_in.cuda()
-            net_in = net_in.to(device)
-            img_index = copy.deepcopy(imgs['index'])
+            # net_in = net_in.to(device)
+            # img_index = copy.deepcopy(imgs['index'])
             # img_index = img_index.cuda()
-            img_index = img_index.to(device)
+            # img_index = img_index.to(device)
             # len=batch_size index
 
+            net_in = imgs['batch'].to(device)
+            img_index = imgs['index'].to(device)
 
 
             for b in range(args.batch_size):
@@ -297,8 +302,19 @@ if args.start_epoch < args.epochs:
 
             if not args.all_frame_error:
                 loss_recon = pixel_loss[:, :, mid, :, :].mean()
+                ssim_val = ssim(outputs[:,:,mid], net_in[:,:,mid], data_range=2.0, win_size=5,size_average=True)
+                loss_ssim = 1 - ssim_val
             else:
                 loss_recon = pixel_loss.mean()
+
+                B, C, T, H, W = outputs.shape
+                # Merge batch and time dims → (B*T, C, H, W)
+                out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+                inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+                loss_ssim = 1 - ssim(out_flat, inp_flat, data_range=2.0, win_size=5, size_average=True)
+
+
+
 
             # Apply motion mask (broadcasts over C dimension)
             # mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
@@ -308,14 +324,16 @@ if args.start_epoch < args.epochs:
             
 
             # loss = loss_recon + loss_entropy + loss_period
-            loss = loss_recon
+            loss = loss_recon + loss_ssim
 
-            
+
 
             loss_recon_epoch += loss_recon.item()
             loss_entropy_epoch += loss_entropy.item()
             loss_period_epoch += loss_period.item()
+            loss_ssim_epoch+= loss_ssim.item()
             total_loss_epoch += loss.item()
+
             losscounter += 1
 
             # print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item()))
@@ -327,6 +345,7 @@ if args.start_epoch < args.epochs:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch+1, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
                 print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
+                print('Loss_ssim: {:.6f}'.format(loss_ssim.item()))
             
             # if j==5:
             #     break
@@ -342,17 +361,22 @@ if args.start_epoch < args.epochs:
             meanloss=loss_recon_epoch/losscounter
             mean_entropy = loss_entropy_epoch / losscounter
             mean_period = loss_period_epoch / losscounter
+            mean_ssim_epoch = loss_ssim_epoch/losscounter
+
             totalloss=total_loss_epoch/losscounter
 
             print('MeanLoss: Reconstruction {:.9f}'.format(meanloss))
             print("Overall loss per clip per epoch: {:.9f}".format(totalloss))
             print('MeanLoss: Entropy {:.9f}'.format(mean_entropy))
             print('MeanLoss: Period {:.9f}'.format(mean_period))
+            print('SSIMLoss:  {:.9f}'.format(mean_ssim_epoch))
+
 
 
             epoch_mean_list.append(round(meanloss, 9))
             epoch_entropy_list.append(round(mean_entropy, 9))
             epoch_period_list.append(round(mean_period, 9))
+            epoch_ssim_list.append(round(mean_ssim_epoch,9))
             epoch_overall_list.append(round(totalloss, 9))
 
 
@@ -509,6 +533,7 @@ loss_data = {
     'mean_loss': epoch_mean_list,
     'entropy_loss': epoch_entropy_list,
     'period_loss': epoch_period_list,
+    'ssim_loss':epoch_ssim_list,
     'overall_loss': epoch_overall_list
 }
 
@@ -526,6 +551,7 @@ plt.figure()
 plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
 plt.plot(epochs, epoch_entropy_list, label="Entropy Loss (weighted)")
 plt.plot(epochs, epoch_period_list, label="Period Loss (weighted)")
+plt.plot(epochs, epoch_ssim_list, label="ssim loss (weighted)")
 plt.plot(epochs, epoch_overall_list, label="Total Loss")
 
 plt.xlabel("Epoch")
