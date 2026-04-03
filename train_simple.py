@@ -155,8 +155,8 @@ for epoch in range(args.start_epoch, args.epochs):
         loss.backward()
         optimizer.step()
 
-        if j==5:
-            break
+        # if j==5:
+        #     break
 
         loss_epoch += loss.item()
         count += 1
