@@ -26,6 +26,11 @@ parser.add_argument('--print_time', action='store_true')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
 parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memory bank')
 
+# Motion mask arguments
+parser.add_argument('--motion_mask', action='store_true', help='enable motion mask for evaluation')
+parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
+parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask out')
+
 
 args = parser.parse_args()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,7 +63,8 @@ test_dataset = TestDataLoader(
     test_folder, label_folder, 
     transforms.Compose([transforms.ToTensor()]),
     resize_height=args.h, resize_width=args.w, num_frames=args.num_frames,
-    dataset=args.dataset_type
+    dataset=args.dataset_type,
+    motion_mask=args.motion_mask, block_size=args.block_size, mask_ratio=args.mask_ratio
 )
 
 test_batch = data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=args.num_workers)
@@ -73,6 +79,9 @@ os.makedirs(save_img_dir, exist_ok=True)
 os.makedirs(save_plot_dir, exist_ok=True)
 
 print(f'Evaluating {args.dataset_type}...')
+print(f"Motion mask: {'ON' if args.motion_mask else 'OFF'}")
+if args.motion_mask:
+    print(f"  Block size: {args.block_size}, Mask ratio: {args.mask_ratio}")
 print(f"length of test_batch: {len(test_batch)}")
 
 active_video = None # using this for saving input/output for a video
@@ -82,7 +91,7 @@ tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
     # if k%100!=0:
-        # continue
+    #     continue
 
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
@@ -90,6 +99,11 @@ for k, data_dict in enumerate(test_batch):
 
     # new
     img_index = data_dict['index'].to(device)    
+
+    # Get motion mask if enabled
+    if args.motion_mask:
+        motion_mask_np = data_dict['motion_mask'].numpy()[0]  # (H, W) float32
+        motion_mask_tensor = data_dict['motion_mask'].to(device)  # (1, H, W)
 
     if video_name not in psnr_records:
         psnr_records[video_name] = []
@@ -100,22 +114,22 @@ for k, data_dict in enumerate(test_batch):
         recon_frame = outputs['output']
         att_w = outputs['att']
         recon_index = outputs['recon_index']
-        # motion_mask = outputs['motion_mask']
 
-        
         # Get the temporal dimension size (dimension 2 for a B, C, D, H, W tensor)
         total_frames = imgs.shape[2] 
         mid_idx = total_frames // 2
 
-        # mask_mid = motion_mask[0, 0, 0].cpu().numpy()  # (H, W)
+        # Calculate MSE for the middle frame
+        pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])  # (C, H, W)
 
-        # pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])
-        # weighted_mse = pixel_mse.mean(dim=0) * torch.tensor(mask_mid).to(device)
-        # recon_loss = weighted_mse.mean().item()
-
-        # Calculate MSE for the middle frame  
-        # OLD ONE
-        recon_loss = torch.mean(loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])).item()
+        if args.motion_mask:
+            # Only count error from unmasked (motion) regions
+            mask_expanded = motion_mask_tensor[0].unsqueeze(0)  # (1, H, W)
+            masked_mse = pixel_mse * mask_expanded  # (C, H, W)
+            recon_loss = masked_mse.sum() / (mask_expanded.sum() * 3 + 1e-8)
+            recon_loss = recon_loss.item()
+        else:
+            recon_loss = torch.mean(pixel_mse).item()
 
         # entropy loss
         entropy_loss = tr_entropy_loss_func(att_w)
@@ -123,12 +137,8 @@ for k, data_dict in enumerate(test_batch):
         # period loss (USING DATALOADER INDEX)
         period_loss = F.cross_entropy(recon_index, img_index)
 
-        # entropy 0.0002  period 0.02
 
-        # total_loss = recon_loss + (0.0002)*entropy_loss + (0.02)*period_loss
-
-
-    psnr_records[video_name].append(psnr(recon_loss)) # replaced psnr(recon_loss) with total loss.item()
+    psnr_records[video_name].append(psnr(recon_loss))
     gt_records[video_name].append(gt_label)
 
     if active_video==None or active_video!=video_name:
@@ -138,8 +148,8 @@ for k, data_dict in enumerate(test_batch):
     frame_counter+=1
 
     # if k%50 == 0:
-    if frame_counter%50 == 0:
 
+    if frame_counter%50 == 0:
 
         label_str = "anomaly" if gt_label == 1 else "normal"
 
@@ -151,14 +161,14 @@ for k, data_dict in enumerate(test_batch):
 
         # ----- compute heatmap -----
         diff = cv2.absdiff(orig_img, recon_img)
-
-        # convert to grayscale difference
         diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        # diff_weighted = diff_gray * mask_mid
-        # diff_weighted = diff_gray.astype(np.float32) * mask_mid
-        diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        # normalize for visualization
-        # diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX)
+
+        if args.motion_mask:
+            # Zero out static regions in the heatmap
+            diff_gray_masked = (diff_gray.astype(np.float32) * motion_mask_np).astype(np.uint8)
+            diff_norm = cv2.normalize(diff_gray_masked, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        else:
+            diff_norm = cv2.normalize(diff_gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
         # apply heatmap colormap
         heatmap = cv2.applyColorMap(diff_norm, cv2.COLORMAP_JET)
@@ -174,6 +184,12 @@ for k, data_dict in enumerate(test_batch):
         cv2.imwrite(recon_path, recon_img)
         cv2.imwrite(orig_path, orig_img)
         cv2.imwrite(heatmap_path, heatmap)
+
+        # Also save the motion mask visualization if enabled
+        if args.motion_mask:
+            mask_vis = (motion_mask_np * 255).astype(np.uint8)
+            mask_name = f"{video_name}_f{frame_counter:04d}_motionmask_{label_str}.png"
+            cv2.imwrite(os.path.join(save_img_dir, mask_name), mask_vis)
 
 toc = time.time()
 
@@ -196,11 +212,6 @@ if args.print_time:
 
 # 5. Summary Plotting (One per Video)
 for vid_name in psnr_records.keys():
-    # anomaly_score_list normalizes the scores for plotting 
-    # this function doesn't calculate psnr
-
-    # USING  INV FUNCTION  MAKES SCORES HIGH FOR ANOMALIES AND LOW FOR NORMAL
-
     vid_scores = anomaly_score_list(psnr_records[vid_name])
     vid_gt = np.array(gt_records[vid_name])
     
@@ -219,7 +230,7 @@ for vid_name in psnr_records.keys():
     plt.figure(figsize=(12, 5))
     plt.plot(vid_scores, label='Anomaly Score', color='blue')
     plt.ylim(-0.05, 1.05)
-    plt.title(f'Video: {vid_name}')
+    plt.title(f'Video: {vid_name}' + (' (motion masked)' if args.motion_mask else ''))
     plt.xlabel('Frames')
     plt.ylabel('Score')
     
@@ -235,3 +246,14 @@ for vid_name in psnr_records.keys():
     plt.close()
 
 print("Evaluation finished. Summary plots saved.")
+
+# python evaluate.py \
+#     --dataset_type VAD \
+#     --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" \
+#     --model VST \
+#     --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_final.pth" \
+#     --num_frames 8 \
+#     --mem_dim 2000 \
+#     --motion_mask \
+#     --block_size 16 \
+#     --mask_ratio 0.5

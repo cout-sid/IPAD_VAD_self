@@ -49,8 +49,8 @@ class MemoryUnit(nn.Module):
             idx = indices[b]
             s = score[b]
             # Boost only the b-th item in the batch
-            start = max(0, idx - 7)
-            end = min(self.mem_dim, idx + 8)
+            start = max(0, idx - 24)
+            end = min(self.mem_dim, idx + 25)
         
             # Apply the boost specifically to batch 'b'
             att_weight[b, :, start:end] += att_weight[b, :, start:end].clone() * s

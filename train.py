@@ -20,8 +20,8 @@ from pytorch_msssim import ssim
 
 import argparse
 
-# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --epochs 2 --num_workers 0 --mem_dim 400
-# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0
+# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --epochs 2 --num_workers 0 --mem_dim 2000 --motion_mask --block_size 16 --mask_ratio 0.5
+# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0 --mem_dim 2000 --motion_mask --block_size 16 --mask_ratio 0.5
 
 parser = argparse.ArgumentParser(description="STEAL Net")
 parser.add_argument('--model', type=str, default='VST', choices=['VST','conAE'])
@@ -57,12 +57,14 @@ parser.add_argument('--max_move', type=int, default=0, help='maximum movement in
 
 parser.add_argument('--print_all', action='store_true', help='print all reconstruction loss')
 parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='entropy loss weight')
-parser.add_argument('--Period_Loss_Weight', type=float, default=0.00002, help='period loss weight')
+parser.add_argument('--Period_Loss_Weight', type=float, default=0.002, help='period loss weight')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
 parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memory bank')
 parser.add_argument('--all_frame_error', action='store_true', help='whether to use whole batch or only mid frame for error')
 
-
+parser.add_argument('--motion_mask', action='store_true', help='use motion mask for loss')
+parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
+parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask')
 ##################
 
 args = parser.parse_args()
@@ -106,9 +108,11 @@ img_extension = '.tif' if args.dataset_type == 'ped1' else '.jpg'
 print('ccccccccccccccccccccccccccccccccccccc')
 print("BEFORE TRAIN DATASET")
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
-                                           resize_height=args.h, resize_width=args.w, num_frames=args.num_frames, dataset=args.dataset_type, img_extension=img_extension)
+                                           resize_height=args.h, resize_width=args.w, num_frames=args.num_frames, dataset=args.dataset_type,
+                                             img_extension=img_extension,motion_mask=True, block_size=16, mask_ratio=0.5)
 print('ccccccccccccccccccccccccccccccccccccc')
 print("TRAIN DATASET LOADED")
+
 # train_dataset_jump = Reconstruction3DDataLoaderJump(train_folder, transforms.Compose([transforms.ToTensor()]),
 #                                                 resize_height=args.h, resize_width=args.w, dataset=args.dataset_type, jump=args.jump, return_normal_seq=args.pseudo_anomaly_jump_inpainting > 0, img_extension=img_extension)
 
@@ -225,26 +229,8 @@ if args.start_epoch < args.epochs:
 
         for j, imgs in enumerate(pbar):
 
-            #imgs (batch_size,3,16,H,W)
-            # net_in = copy.deepcopy(imgs['batch'])
-            # B, C, D, H, W = net_in.shape
-            # Hp = H // patch_size
-            # Wp = W // patch_size
-
-            # net_in = net_in.cuda()
-            # net_in = net_in.to(device)
-            # img_index = copy.deepcopy(imgs['index'])
-            # img_index = img_index.cuda()
-            # img_index = img_index.to(device)
-            # len=batch_size index
-
             net_in = imgs['batch'].to(device)
             img_index = imgs['index'].to(device)
-
-
-
-
-
 
             ########## TRAIN GENERATOR
             # net_in (batch_size,3,num_frames,H,W)
@@ -252,84 +238,60 @@ if args.start_epoch < args.epochs:
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
-            # motion_mask = Recon_frames['motion_mask']
-
-            # memory entropy loss
-            # entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
-            # entropy_loss_val = entropy_loss.item()
-            # loss_entropy = entropy_loss_weight * entropy_loss
-            loss_entropy = torch.tensor(0.0, device=device)
-            
-
-            #recon loss
-            # loss_mse = loss_func_mse(outputs, net_in)
 
             pixel_loss = loss_func_mse(outputs, net_in)  # (B,3,D,H,W)
 
-            # weighted_pixel_loss = pixel_loss * weights_tube
 
-            # loss_mse = weighted_pixel_loss.sum() / (weights_tube.sum() * C + 1e-8)
-            loss_mse=pixel_loss
-
-
+            # memory entropy loss
+            entropy_loss = tr_entropy_loss_func(att_w)#weight entropy loss
+            loss_entropy = entropy_loss_weight * entropy_loss
+            # loss_entropy = torch.tensor(0.0, device=device)
+            
 
             #period loss
-            # loss_period = F.cross_entropy(recon_index,img_index)
-            # loss_period = loss_period * period_loss_weight
-            loss_period=torch.tensor(0.0, device=device)
+            loss_period = F.cross_entropy(recon_index,img_index)
+            loss_period = loss_period * period_loss_weight
+            # loss_period=torch.tensor(0.0, device=device)
 
 
 
-            modified_loss_mse = []
-            # for b in range(args.batch_size):
-
-            #     modified_loss_mse.append(torch.mean(loss_mse[b]))
-            #     lossepoch += modified_loss_mse[-1].cpu().detach().item()
-            #     # lossepoch += torch.mean
-            #     losscounter += 1
-
-            # assert len(modified_loss_mse) == loss_mse.size(0)
-            # stacked_loss_mse = torch.stack(modified_loss_mse)
-            # loss_recon = torch.mean(stacked_loss_mse)
 
             mid = pixel_loss.shape[2] // 2
 
+
+            if args.motion_mask:
+                mask = imgs['motion_mask'].to(device)  # (B, H, W)
+                mask_expanded = mask.unsqueeze(1)       # (B, 1, H, W)
+
             if not args.all_frame_error:
-                loss_recon = pixel_loss[:, :, mid, :, :].mean()
-                # loss_recon = torch.tensor(0.0, device=device)
-                # ssim_val = ssim(outputs[:,:,mid], net_in[:,:,mid], data_range=2.0, win_size=5,size_average=True)
-                # loss_ssim = 1 - ssim_val
-                # print("-"*100)
-                # print("USING MIDDLE FRAME ONLY FOR ERROR")
-                # print("-"*100)
-                loss_ssim = torch.tensor(0.0, device=device)
+                # Middle frame only
+                if args.motion_mask:
+                    masked_diff = pixel_loss[:, :, mid, :, :] * mask_expanded  # (B, C, H, W)
+                    loss_recon = masked_diff.sum() / (mask_expanded.sum() * 3 + 1e-8)
+                else:
+                    loss_recon = pixel_loss[:, :, mid, :, :].mean()
 
-            else:
-                loss_recon = pixel_loss.mean()
-                # loss_recon = torch.tensor(0.0, device=device)
-
-                B, C, T, H, W = outputs.shape
-                # # Merge batch and time dims → (B*T, C, H, W)
                 # out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 # inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 # loss_ssim = 1 - ssim(out_flat, inp_flat, data_range=2.0, win_size=5, size_average=True)
-                # print("-"*100)
-                # print("USING ALL FRAMES  FOR ERROR")
-                # print("-"*100)
                 loss_ssim = torch.tensor(0.0, device=device)
 
+            else:
+                # All frames
+                if args.motion_mask:
+                    mask_tube = mask_expanded.unsqueeze(2)  # (B, 1, 1, H, W)
+                    masked_diff = pixel_loss * mask_tube    # (B, C, D, H, W)
+                    num_frames = pixel_loss.shape[2]
+                    loss_recon = masked_diff.sum() / (mask_expanded.sum() * 3 * num_frames + 1e-8)
+                else:
+                    loss_recon = pixel_loss.mean()
 
-
-
-            # Apply motion mask (broadcasts over C dimension)
-            # mask_mid = motion_mask[:, :, 0, :, :]  # (B, 1, H, W)
-            # weighted_loss = loss_recon_mid * mask_mid   # (B, 3, H, W)
-            # loss_recon = weighted_loss.mean()
+                loss_ssim = torch.tensor(0.0, device=device)
 
             
 
-            # loss = loss_recon + loss_entropy + loss_period
-            loss = loss_recon
+            loss = loss_recon + loss_entropy + loss_period
+            
 
 
 
@@ -353,7 +315,15 @@ if args.start_epoch < args.epochs:
                 print('Loss_ssim: {:.6f}'.format(loss_ssim.item()))
             
             # if j==5:
+            #     if args.motion_mask:
+            #         mask_np = mask[0].cpu().numpy()
+            #         orig = (net_in[0, :, mid].cpu().numpy() + 1) * 127.5
+            #         orig = orig.transpose(1, 2, 0).astype(np.uint8)
+            #         masked_img = (orig.astype(np.float32) * np.stack([mask_np]*3, axis=-1)).astype(np.uint8)
+            #         cv2.imwrite(f"masked_sample_{epoch}.png", masked_img)
+            #         print(f"Saved masked_sample_{epoch}.png")
             #     break
+                
 
             pbar.set_postfix(batch=j)
 

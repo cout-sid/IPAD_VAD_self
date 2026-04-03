@@ -33,9 +33,94 @@ def np_load_frame(filename, resize_height, resize_width, grayscale=False):
 # shape => (h,w,3)
 
 
+def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.5):
+    """
+    Compute a binary motion mask for the middle frame using prev and next frames.
+    Blocks with LOW motion (static regions) are masked OUT (set to 0).
+    Blocks with HIGH motion are kept (set to 1).
+    
+    Args:
+        frames: list of numpy arrays (H, W, 3) in [-1, 1] range
+        mid_idx: index of the middle frame in the list
+        block_size: size of blocks for motion scoring (default 16)
+        mask_ratio: fraction of lowest-motion blocks to mask out (default 0.5)
+    
+    Returns:
+        mask: numpy array (H, W) with values 0 (masked/static) or 1 (keep/motion)
+    """
+    mid_frame = frames[mid_idx]
+    h, w = mid_frame.shape[:2]
+    
+    # Convert from [-1, 1] to [0, 255] uint8 for difference computation
+    def to_uint8(f):
+        return ((f + 1.0) * 127.5).astype(np.uint8)
+    
+    mid_uint8 = to_uint8(mid_frame)
+    mid_gray = cv2.cvtColor(mid_uint8, cv2.COLOR_BGR2GRAY)
+    
+    # Use both prev and next frame if available
+    diff_accum = np.zeros_like(mid_gray, dtype=np.float32)
+    count = 0
+    
+    if mid_idx > 0:
+        prev_gray = cv2.cvtColor(to_uint8(frames[mid_idx - 1]), cv2.COLOR_BGR2GRAY)
+        diff_accum += cv2.absdiff(mid_gray, prev_gray).astype(np.float32)
+        count += 1
+    
+    if mid_idx < len(frames) - 1:
+        next_gray = cv2.cvtColor(to_uint8(frames[mid_idx + 1]), cv2.COLOR_BGR2GRAY)
+        diff_accum += cv2.absdiff(mid_gray, next_gray).astype(np.float32)
+        count += 1
+    
+    if count > 0:
+        diff_accum /= count  # average of prev and next differences
+    
+    # Crop to be divisible by block_size
+    h_crop = h - (h % block_size)
+    w_crop = w - (w % block_size)
+    diff_cropped = diff_accum[:h_crop, :w_crop]
+    
+    # Score each block
+    num_blocks_h = h_crop // block_size
+    num_blocks_w = w_crop // block_size
+    total_blocks = num_blocks_h * num_blocks_w
+    
+    block_scores = []
+    for i in range(num_blocks_h):
+        for j in range(num_blocks_w):
+            y_s = i * block_size
+            y_e = y_s + block_size
+            x_s = j * block_size
+            x_e = x_s + block_size
+            score = np.sum(diff_cropped[y_s:y_e, x_s:x_e])
+            block_scores.append((score, i, j))
+    
+    # Sort ascending (lowest motion first)
+    block_scores.sort(key=lambda x: x[0])
+    
+    # Mask out the lowest-motion blocks
+    num_to_mask = int(total_blocks * mask_ratio)
+    masked_blocks = set()
+    for k in range(num_to_mask):
+        _, bi, bj = block_scores[k]
+        masked_blocks.add((bi, bj))
+    
+    # Build mask (full image size, 0 = masked/static, 1 = keep/motion)
+    mask = np.ones((h, w), dtype=np.float32)
+    for (bi, bj) in masked_blocks:
+        y_s = bi * block_size
+        y_e = y_s + block_size
+        x_s = bj * block_size
+        x_e = x_s + block_size
+        mask[y_s:y_e, x_s:x_e] = 0.0
+    
+    return mask
+
+
 class Reconstruction3DDataLoader(data.Dataset):
     def __init__(self, video_folder, transform, resize_height, resize_width, num_frames=16,
-                 img_extension='.jpg', dataset='ped2', jump=[2], hold=[2], return_normal_seq=False):
+                 img_extension='.jpg', dataset='ped2', jump=[2], hold=[2], return_normal_seq=False,
+                 motion_mask=False, block_size=16, mask_ratio=0.5):
         self.dir = video_folder
         self.transform = transform
         self.videos = OrderedDict()
@@ -45,6 +130,11 @@ class Reconstruction3DDataLoader(data.Dataset):
 
         self.extension = img_extension
         self.dataset = dataset
+
+        # Motion mask params
+        self.motion_mask = motion_mask
+        self.block_size = block_size
+        self.mask_ratio = mask_ratio
 
         self.setup()
         self.samples, self.background_models = self.get_all_samples()
@@ -82,21 +172,11 @@ class Reconstruction3DDataLoader(data.Dataset):
         return frames, background_models
 
     def __getitem__(self, index):
-        # index = 8
-        # video_name = self.samples[index].split('\\')[-2]
-        # if self.dataset == 'shanghai' and 'training' in self.samples[index]:
-        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
-        # else:
-        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
-
-        # video_name = os.path.basename(os.path.normpath(self.samples[index]))
         filename = os.path.basename(self.samples[index])
 
         parent_dir = os.path.dirname(self.samples[index])
         video_name = os.path.basename(parent_dir)
 
-        # Split by '.' and get the number part (e.g., '001')
-        # This works for '001.jpg' -> ['001', 'jpg'] -> '001'
         frame_number_str = filename.split('.')[-2]
 
         if self.dataset == 'shanghai' and 'training' in self.samples[index]:
@@ -105,37 +185,47 @@ class Reconstruction3DDataLoader(data.Dataset):
             frame_name = int(frame_number_str)
 
         batch = []
+        raw_frames = []  # store raw numpy frames for motion mask
         for i in range(self._num_frames):
             image = np_load_frame(self.videos[video_name]['frame'][frame_name + i], self._resize_height,
                                   self._resize_width, grayscale=False)
-# np_load_frame returns shape => (h,w,3)
+            
+            if self.motion_mask:
+                raw_frames.append(image)  # (H, W, 3) in [-1, 1]
             
             if self.transform is not None:
                 batch.append(self.transform(image))
-# no automatic scaling normally we scale (0,255)=>(0.0,1.0) but 
-# np_load_frame scaled it already to (-1.0,1.0) which is float so transform doesn't scale it now
 
-        # batch:len=16 ,batch[0]:torch(3,256,256)
         img = OrderedDict()
         img['batch'] = np.stack(batch, axis=1)
         img['index'] = frame_name*200//len(self.videos[video_name]['frame'])
-        # return np.stack(batch, axis=1)
+        
+        # Compute motion mask if enabled
+        if self.motion_mask:
+            mid_idx = self._num_frames // 2
+            mask = compute_motion_mask(raw_frames, mid_idx, 
+                                       self.block_size, self.mask_ratio)
+            img['motion_mask'] = mask  # (H, W) float32, 0=static 1=motion
+        
         return img
 
     def __len__(self):
         return len(self.samples)
     
+
 class TestDataLoader(Reconstruction3DDataLoader):
     def __init__(self, video_folder, label_folder, transform, resize_height, resize_width, 
-                 num_frames=16, img_extension='.jpg', dataset='ped2'):
-        # 1. Initialize the parent class to set up video paths and frame lists
+                 num_frames=16, img_extension='.jpg', dataset='ped2',
+                 motion_mask=False, block_size=16, mask_ratio=0.5):
+        # Initialize parent with motion mask params
         super(TestDataLoader, self).__init__(video_folder, transform, resize_height, resize_width, 
-                                             num_frames, img_extension, dataset)
+                                             num_frames, img_extension, dataset,
+                                             motion_mask=motion_mask, block_size=block_size,
+                                             mask_ratio=mask_ratio)
         
         self.label_dir = label_folder
         self.video_labels = {}
         
-        # 2. Load labels and sync with existing video lengths
         self.load_all_labels()
 
     def load_all_labels(self):
@@ -153,11 +243,9 @@ class TestDataLoader(Reconstruction3DDataLoader):
                 num_frames = self.videos[video_name]['length']
                 num_labels = len(labels)
 
-                # Sync: Use the smaller of the two to ensure every frame has a label
                 min_len = min(num_frames, num_labels)
                 self.video_labels[video_name] = labels[:min_len]
                 
-                # Update parent dictionary if we had to trim frames to match labels
                 if num_frames > min_len:
                     self.videos[video_name]['frame'] = self.videos[video_name]['frame'][:min_len]
                     self.videos[video_name]['length'] = min_len
@@ -165,48 +253,49 @@ class TestDataLoader(Reconstruction3DDataLoader):
                 print(f"Warning: Label file {label_path} not found for video {video_name}")
 
     def __getitem__(self, index):
-        # Path of the first frame in the sequence
         full_path = self.samples[index]
         filename = os.path.basename(full_path)
         video_name = os.path.basename(os.path.dirname(full_path))
 
-        # Determine frame index from filename (e.g., '081.jpg' -> 81)
-        # Note: If filenames start at 001, frame_idx 0 corresponds to '001.jpg'
         frame_number = int(filename.split('.')[-2])
         frame_idx = frame_number - 1 if self.dataset != 'shanghai' else frame_number - 1
 
-        # 1. Load the 16-frame clip
         batch = []
+        raw_frames = []  # store raw numpy frames for motion mask
         for i in range(self._num_frames):
-            # Target is current frame + step
-            # parent's get_all_samples ensures this index is always valid
             target_frame_path = self.videos[video_name]['frame'][frame_idx + i]
             
             image = np_load_frame(target_frame_path, self._resize_height, 
                                   self._resize_width, grayscale=True)
             
+            if self.motion_mask:
+                raw_frames.append(image)
+            
             if self.transform is not None:
                 batch.append(self.transform(image))
 
-        # 2. Extract Middle Label
-        # For num_frames=16, the middle frame is index 8 (the 9th frame)
+        # Extract Middle Label
         middle_offset = self._num_frames // 2
         label_idx = frame_idx + middle_offset
         
-        # Pull the specific label for this middle frame
         if video_name in self.video_labels:
-            # clip index just in case of very short video/label mismatch
             safe_idx = min(label_idx, len(self.video_labels[video_name]) - 1)
             label = self.video_labels[video_name][safe_idx]
         else:
             label = 0
 
-        # 3. Format output
         img = OrderedDict()
-        img['batch'] = np.stack(batch, axis=1) # Shape: (C, T, H, W)
+        img['batch'] = np.stack(batch, axis=1)  # (C, T, H, W)
         img['label'] = label
         img['video_name'] = video_name
         img['index'] = label_idx * 200 // self.videos[video_name]['length']
+        
+        # Compute motion mask if enabled
+        if self.motion_mask:
+            mid_idx = self._num_frames // 2
+            mask = compute_motion_mask(raw_frames, mid_idx,
+                                       self.block_size, self.mask_ratio)
+            img['motion_mask'] = mask  # (H, W) float32, 0=static 1=motion
         
         return img
 
@@ -214,21 +303,11 @@ class TestDataLoader(Reconstruction3DDataLoader):
 
 class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
     def __getitem__(self, index):
-        # index = 8
-        # video_name = self.samples[index].split('\\')[-2]
-        # if self.dataset == 'shanghai' and 'training' in self.samples[index]:  # bcos my shanghai's start from 1
-        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2]) - 1
-        # else:
-        #     frame_name = int(self.samples[index].split('\\')[-1].split('.')[-2])
-
-        # video_name = os.path.basename(os.path.normpath(self.samples[index]))
         filename = os.path.basename(self.samples[index])
 
         parent_dir = os.path.dirname(self.samples[index])
         video_name = os.path.basename(parent_dir)
 
-        # Split by '.' and get the number part (e.g., '001')
-        # This works for '001.jpg' -> ['001', 'jpg'] -> '001'
         frame_number_str = filename.split('.')[-2]
 
         if self.dataset == 'shanghai' and 'training' in self.samples[index]:
@@ -243,7 +322,6 @@ class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
 
         retry = 0
         while len(self.videos[video_name]['frame']) < frame_name + (self._num_frames-1) * jump and retry < 10:
-            # reselect the frame_name
             frame_name = np.random.randint(len(self.videos[video_name]['frame']))
             retry += 1
 
@@ -265,5 +343,3 @@ class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
 
         else:
             return np.stack(batch, axis=1), normal_batch
-
-
