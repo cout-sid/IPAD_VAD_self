@@ -20,8 +20,8 @@ from pytorch_msssim import ssim
 
 import argparse
 
-# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --epochs 2 --num_workers 0
-# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\IPAD_dataset\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0
+# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --epochs 2 --num_workers 0 --mem_dim 400
+# python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0
 
 parser = argparse.ArgumentParser(description="STEAL Net")
 parser.add_argument('--model', type=str, default='VST', choices=['VST','conAE'])
@@ -216,9 +216,6 @@ if args.start_epoch < args.epochs:
         loss_ssim_epoch = 0
 
 
-        patch_size = 8
-        high_ratio = 0.7        # top 50%
-        low_weight = 0.2        # weight for low-gradient patches
 
 
         # Wrap your DataLoader
@@ -298,26 +295,28 @@ if args.start_epoch < args.epochs:
             mid = pixel_loss.shape[2] // 2
 
             if not args.all_frame_error:
-                # loss_recon = pixel_loss[:, :, mid, :, :].mean()
-                loss_recon = torch.tensor(0.0, device=device)
-                ssim_val = ssim(outputs[:,:,mid], net_in[:,:,mid], data_range=2.0, win_size=5,size_average=True)
-                loss_ssim = 1 - ssim_val
+                loss_recon = pixel_loss[:, :, mid, :, :].mean()
+                # loss_recon = torch.tensor(0.0, device=device)
+                # ssim_val = ssim(outputs[:,:,mid], net_in[:,:,mid], data_range=2.0, win_size=5,size_average=True)
+                # loss_ssim = 1 - ssim_val
                 # print("-"*100)
                 # print("USING MIDDLE FRAME ONLY FOR ERROR")
                 # print("-"*100)
+                loss_ssim = torch.tensor(0.0, device=device)
 
             else:
-                # loss_recon = pixel_loss.mean()
-                loss_recon = torch.tensor(0.0, device=device)
+                loss_recon = pixel_loss.mean()
+                # loss_recon = torch.tensor(0.0, device=device)
 
                 B, C, T, H, W = outputs.shape
-                # Merge batch and time dims → (B*T, C, H, W)
-                out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
-                inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
-                loss_ssim = 1 - ssim(out_flat, inp_flat, data_range=2.0, win_size=5, size_average=True)
+                # # Merge batch and time dims → (B*T, C, H, W)
+                # out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+                # inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
+                # loss_ssim = 1 - ssim(out_flat, inp_flat, data_range=2.0, win_size=5, size_average=True)
                 # print("-"*100)
                 # print("USING ALL FRAMES  FOR ERROR")
                 # print("-"*100)
+                loss_ssim = torch.tensor(0.0, device=device)
 
 
 
@@ -330,7 +329,7 @@ if args.start_epoch < args.epochs:
             
 
             # loss = loss_recon + loss_entropy + loss_period
-            loss = loss_ssim
+            loss = loss_recon
 
 
 
