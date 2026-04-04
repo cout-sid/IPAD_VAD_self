@@ -33,32 +33,21 @@ def np_load_frame(filename, resize_height, resize_width, grayscale=False):
 # shape => (h,w,3)
 
 
-def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.5):
+def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.8, low_weight=0.2, blur_sigma=4):
     """
-    Compute a binary motion mask for the middle frame using prev and next frames.
-    Blocks with LOW motion (static regions) are masked OUT (set to 0).
-    Blocks with HIGH motion are kept (set to 1).
-    
-    Args:
-        frames: list of numpy arrays (H, W, 3) in [-1, 1] range
-        mid_idx: index of the middle frame in the list
-        block_size: size of blocks for motion scoring (default 16)
-        mask_ratio: fraction of lowest-motion blocks to mask out (default 0.5)
-    
-    Returns:
-        mask: numpy array (H, W) with values 0 (masked/static) or 1 (keep/motion)
+    Compute a SOFT motion mask for the middle frame.
+    Static blocks get low_weight (not 0), motion blocks get 1.0.
+    Gaussian blur smooths the block boundaries.
     """
     mid_frame = frames[mid_idx]
     h, w = mid_frame.shape[:2]
     
-    # Convert from [-1, 1] to [0, 255] uint8 for difference computation
     def to_uint8(f):
         return ((f + 1.0) * 127.5).astype(np.uint8)
     
     mid_uint8 = to_uint8(mid_frame)
     mid_gray = cv2.cvtColor(mid_uint8, cv2.COLOR_BGR2GRAY)
     
-    # Use both prev and next frame if available
     diff_accum = np.zeros_like(mid_gray, dtype=np.float32)
     count = 0
     
@@ -73,14 +62,12 @@ def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.5):
         count += 1
     
     if count > 0:
-        diff_accum /= count  # average of prev and next differences
+        diff_accum /= count
     
-    # Crop to be divisible by block_size
     h_crop = h - (h % block_size)
     w_crop = w - (w % block_size)
     diff_cropped = diff_accum[:h_crop, :w_crop]
     
-    # Score each block
     num_blocks_h = h_crop // block_size
     num_blocks_w = w_crop // block_size
     total_blocks = num_blocks_h * num_blocks_w
@@ -95,24 +82,26 @@ def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.5):
             score = np.sum(diff_cropped[y_s:y_e, x_s:x_e])
             block_scores.append((score, i, j))
     
-    # Sort ascending (lowest motion first)
     block_scores.sort(key=lambda x: x[0])
     
-    # Mask out the lowest-motion blocks
     num_to_mask = int(total_blocks * mask_ratio)
     masked_blocks = set()
     for k in range(num_to_mask):
         _, bi, bj = block_scores[k]
         masked_blocks.add((bi, bj))
     
-    # Build mask (full image size, 0 = masked/static, 1 = keep/motion)
+    # Soft mask: low_weight for static, 1.0 for motion
     mask = np.ones((h, w), dtype=np.float32)
     for (bi, bj) in masked_blocks:
         y_s = bi * block_size
         y_e = y_s + block_size
         x_s = bj * block_size
         x_e = x_s + block_size
-        mask[y_s:y_e, x_s:x_e] = 0.0
+        mask[y_s:y_e, x_s:x_e] = low_weight
+    
+    # Gaussian blur to remove blocky edges
+    ksize = blur_sigma * 4 + 1  # kernel size must be odd
+    mask = cv2.GaussianBlur(mask, (ksize, ksize), blur_sigma)
     
     return mask
 
