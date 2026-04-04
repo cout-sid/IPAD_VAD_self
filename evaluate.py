@@ -73,8 +73,11 @@ test_batch = data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_work
 psnr_records = OrderedDict() # Stores list of PSNRs per video_name
 gt_records = OrderedDict()   # Stores list of GT labels per video_name
 
-save_img_dir = "saved_images"
-save_plot_dir = "score_plots"
+# Extract model name from model_dir for unique output folders
+model_filename = os.path.splitext(os.path.basename(args.model_dir))[0]  # e.g. "model_best"
+save_img_dir = f"saved_images_{model_filename}"
+save_plot_dir = f"score_plots_{model_filename}"
+
 os.makedirs(save_img_dir, exist_ok=True)
 os.makedirs(save_plot_dir, exist_ok=True)
 
