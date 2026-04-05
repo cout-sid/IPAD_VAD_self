@@ -1,5 +1,5 @@
 import torch
-from .reconstruction_model import Reconstruction3DEncoder, Reconstruction3DDecoder, VST3DDecoder,VST3DDecoder_sixteen
+from .reconstruction_model import Reconstruction3DEncoder, Reconstruction3DDecoder, VST3DDecoder, VST3d_wavnet
 from .VST_block import SwinTransformer3D
 from einops import rearrange
 from model import MemModule
@@ -10,34 +10,13 @@ from .wavelet_attention import AdvancedWaveletAttention # Updated from WaveletAt
 from .motion_attention_mask import MotionAttentionMask
 
 
-# from torch_vst_encoder import TorchVSTEncoder
-
-# from video_swin_encoder import VideoSwinEncoder
-
-# # Create model
-# encoder = VideoSwinEncoder()
-# encoder.eval()
-
-# # Example input
-# input_tensor = torch.randn(1, 3, 16, 224, 224)
-
-# with torch.no_grad():
-#     features = encoder(input_tensor)
-
-# print("Feature shape:", features.shape)
-
-
 class VST(torch.nn.Module):
-    def __init__(self, mem_dim=2000, shrink_thres=0.0025):  # for reconstruction
+    def __init__(self, mem_dim=2000, shrink_thres=0.0025, use_skip=True):  # for reconstruction
         super(VST, self).__init__()
         self.reconstruction = True
-        # self.chnum_in = chnum_in
+        self.use_skip = use_skip
 
-        # self.encoder = Reconstruction3DEncoder(chnum_in=1)  # black and white
-        # self.decoder = Reconstruction3DDecoder(chnum_in=1)  # black and white
         self.transformer_encoder = SwinTransformer3D()
-        # self.transformer_encoder = TorchVSTEncoder()
-
 
         self.mem_rep = MemModule(mem_dim=mem_dim, fea_dim=768, shrink_thres=shrink_thres)
         self.period = nn.Sequential(
@@ -48,55 +27,41 @@ class VST(torch.nn.Module):
             nn.AdaptiveAvgPool3d((1, 1, 1)), 
             nn.Flatten(1),
             nn.Linear(768, 4096),
-            # nn.Flatten(1),
-            # nn.Linear(768*4*4*4,4096),
             nn.ReLU(),
             nn.Linear(4096,2048),
             nn.ReLU(),
             nn.Linear(2048,200),
         )
-        self.transformer_decoder = VST3DDecoder(chnum_out=3)
-        # self.encoder = Reconstruction3DEncoder(chnum_in=3)  # RGB
-        # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
+        if use_skip:
+            self.transformer_decoder = VST3d_wavnet(chnum_out=3, use_skip=use_skip)
+        else:
+            self.transformer_decoder=VST3DDecoder(chnum_out=3)
 
         self.wavelet_att = AdvancedWaveletAttention(channels=768)
-        # self.motion_mask = MotionAttentionMask()
 
     def forward(self, x):
-        feature = self.transformer_encoder(x)
-        # print(f"Shape of input:{x.shape}")
+        # Encoder: with or without skip connections
+        if self.use_skip:
+            feature, skips = self.transformer_encoder.forward_with_skips(x)
+        else:
+            feature = self.transformer_encoder(x)
+            skips = None
 
-        # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        # print("model debugging")
-        # print(f"printing the shape of feature  of VST model {feature.shape}")
-        #feature (batch_size,768,4,8,8)  --> previously now it's (batch_size,768,2,8,8)
-
-        #wavelet transform
-
+        # Period prediction
         recon_index = self.period(feature)
-        # print(f"The shape of recon_index i.e output of self.period: {recon_index.shape}") 
-        # [8,200]
-        # print(recon_index[0])
+
+        # Memory module
         res_mem = self.mem_rep(feature, recon_index)
         feature_mem = res_mem['output']
-        # print(f"feature shape after memory module: {feature.shape}")
-        # [8, 768, 2, 8, 8]
         att = res_mem['att']
-        # feature_mem = self.wavelet_att(feature_mem)
 
-        output = self.transformer_decoder(feature_mem.clone())
-
-        # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        # print("The shape of output after decoding")
-        # print(output.shape)
-
-        # mask, base_weight = self.motion_mask(x)
-        
+        # Decoder: pass skips if available
+        if self.use_skip:
+            output = self.transformer_decoder(feature_mem.clone(), skips=skips)
+        else:
+            output = self.transformer_decoder(feature_mem.clone())
         return {
             'output': output,
             'att': att,
             'recon_index': recon_index,
-            # 'motion_mask': mask,          # ADD THIS
-            # 'base_weight': base_weight,   # ADD THIS (for logging)
         }
-

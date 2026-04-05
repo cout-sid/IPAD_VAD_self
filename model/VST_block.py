@@ -562,6 +562,28 @@ class SwinTransformer3D(nn.Module):
         x = rearrange(x, 'n d h w c -> n c d h w')
         return x
 
+    def forward_with_skips(self, x):
+        """Forward with intermediate features for U-Net skip connections.
+        
+        Returns:
+            x: Final normalized feature (B, C, D, H, W)
+            skips: List of intermediate features after layers 0..N-2,
+                   each shaped (B, C_i, D_i, H_i, W_i)
+        """
+        x = self.patch_embed(x)
+        x = self.pos_drop(x)
+        
+        skips = []
+        for i, layer in enumerate(self.layers):
+            x = layer(x.contiguous())
+            if i < self.num_layers - 1:  # save after layers 0, 1, 2
+                skips.append(x.clone())
+        
+        x = rearrange(x, 'n c d h w -> n d h w c')
+        x = self.norm(x)
+        x = rearrange(x, 'n d h w c -> n c d h w')
+        return x, skips
+
     # def train(self, mode=True):
     #     """Convert the model into training mode while keep layers freezed."""
     #     super(SwinTransformer3D, self).train(mode)
