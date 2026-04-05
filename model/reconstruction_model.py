@@ -3,6 +3,10 @@ from functools import reduce
 from operator import mul
 import torch
 
+from pytorch_wavelets import DWTForward, DWTInverse
+import torch
+import torch.nn as nn
+
 class Reconstruction3DEncoder(nn.Module):
     def __init__(self, chnum_in):
         super(Reconstruction3DEncoder, self).__init__()
@@ -116,7 +120,8 @@ class Reconstruction3DDecoder(nn.Module):
 #     def forward(self, x):
 #         x = self.transformer_decoder(x)
 #         return x
-    
+
+   
 class VST3DDecoder(nn.Module):
     """
     Decoder for 8-frame input.
@@ -196,6 +201,73 @@ class VST3DDecoder(nn.Module):
 
 # 8, 768, 4, 8, 8
 
+
+
+
+class DWTChannelAttention3D(nn.Module):
+    def __init__(self, channels, reduction=8, wave='db4'):
+        super().__init__()
+        self.channels = channels
+        
+        self.dwt = DWTForward(J=1, wave=wave, mode='zero')
+        self.idwt = DWTInverse(wave=wave, mode='zero')
+        
+        # LL (C channels) + LH,HL,HH (3*C channels) = 4C
+        self.channel_att = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(1),
+            nn.Linear(channels * 4, channels * 4 // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels * 4 // reduction, channels * 4, bias=False),
+            nn.Sigmoid()
+        )
+        
+        self.fusion = nn.Sequential(
+            nn.Conv3d(channels, channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(channels),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+    def forward(self, x):
+        B, C, D, H, W = x.shape
+        residual = x
+        
+        output_frames = []
+        for t in range(D):
+            frame = x[:, :, t, :, :]  # (B, C, H, W)
+            
+            # DWT: yl = (B, C, H/2, W/2), yh = list of (B, C, 3, H/2, W/2)
+            yl, yh = self.dwt(frame)
+            
+            # yh[0] shape: (B, C, 3, H', W') — 3 sub-bands (LH, HL, HH)
+            lh = yh[0][:, :, 0]  # (B, C, H', W')
+            hl = yh[0][:, :, 1]
+            hh = yh[0][:, :, 2]
+            
+            # Concatenate all sub-bands: (B, 4C, H', W')
+            coeffs = torch.cat([yl, lh, hl, hh], dim=1)
+            
+            # Channel attention
+            att_weights = self.channel_att(coeffs).view(B, 4 * C, 1, 1)
+            coeffs = coeffs * att_weights
+            
+            # Split back
+            yl_att, lh_att, hl_att, hh_att = torch.chunk(coeffs, 4, dim=1)
+            yh_att = [torch.stack([lh_att, hl_att, hh_att], dim=2)]
+            
+            # IDWT
+            frame_out = self.idwt((yl_att, yh_att))
+            
+            # Handle size mismatch from DWT padding
+            frame_out = frame_out[:, :, :H, :W]
+            
+            output_frames.append(frame_out)
+        
+        x_out = torch.stack(output_frames, dim=2)  # (B, C, D, H, W)
+        x_out = self.fusion(x_out) + residual
+        
+        return x_out
+
 class VST3DDecoder_sixteen(nn.Module):
     """
     Decoder for 8-frame input.
@@ -243,6 +315,10 @@ class VST3DDecoder_sixteen(nn.Module):
             # nn.LeakyReLU(0.2, inplace=True),
         )
 
+        # self.channel_att = ChannelAttention3D(channels=128, reduction=8)
+        self.dwt_att = DWTChannelAttention3D(channels=128, reduction=8, wave='db4')
+
+
         # Stage 4: (128, 8, 64, 64) → (64, 8, 128, 128)  [spatial only]
         self.up4 = nn.Sequential(
             nn.ConvTranspose3d(128, 64, kernel_size=(3,3,3),
@@ -271,6 +347,8 @@ class VST3DDecoder_sixteen(nn.Module):
         x = self.up1(x)   # (B, 384, 8, 16, 16)
         x = self.up2(x)   # (B, 256, 8, 32, 32)
         x = self.up3(x)   # (B, 128, 8, 64, 64)
+        x = self.dwt_att(x)   # channel attention — same shape
         x = self.up4(x)   # (B,  64, 8, 128, 128)
         x = self.up5(x)   # (B,   C, 8, 256, 256)
         return x
+    

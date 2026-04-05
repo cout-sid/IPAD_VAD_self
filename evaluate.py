@@ -29,7 +29,7 @@ parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memo
 # Motion mask arguments
 parser.add_argument('--motion_mask', action='store_true', help='enable motion mask for evaluation')
 parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
-parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask out')
+parser.add_argument('--mask_ratio', type=float, default=0.8, help='fraction of static blocks to mask out')
 
 
 args = parser.parse_args()
@@ -48,9 +48,9 @@ if torch.cuda.is_available():
 model_dict = torch.load(args.model_dir, weights_only=False)
 
 try:
-    model.load_state_dict(model_dict['model'].state_dict())
+    model.load_state_dict(model_dict['model'].state_dict(),strict=False)
 except:
-    model.load_state_dict(model_dict['model'])
+    model.load_state_dict(model_dict['model'],strict=False)
 
 model.eval()
 loss_func_mse = nn.MSELoss(reduction='none')
@@ -122,17 +122,9 @@ for k, data_dict in enumerate(test_batch):
         total_frames = imgs.shape[2] 
         mid_idx = total_frames // 2
 
-        # Calculate MSE for the middle frame
+        # Calculate MSE for the middle frame (always use original unmasked error for scoring)
         pixel_mse = loss_func_mse(recon_frame[0, :, mid_idx], imgs[0, :, mid_idx])  # (C, H, W)
-
-        if args.motion_mask:
-            # Only count error from unmasked (motion) regions
-            mask_expanded = motion_mask_tensor[0].unsqueeze(0)  # (1, H, W)
-            masked_mse = pixel_mse * mask_expanded  # (C, H, W)
-            recon_loss = masked_mse.sum() / (mask_expanded.sum() * 3 + 1e-8)
-            recon_loss = recon_loss.item()
-        else:
-            recon_loss = torch.mean(pixel_mse).item()
+        recon_loss = torch.mean(pixel_mse).item()
 
         # entropy loss
         entropy_loss = tr_entropy_loss_func(att_w)
@@ -216,6 +208,7 @@ if args.print_time:
 # 5. Summary Plotting (One per Video)
 for vid_name in psnr_records.keys():
     vid_scores = anomaly_score_list(psnr_records[vid_name])
+    vid_raw = np.array(psnr_records[vid_name])
     vid_gt = np.array(gt_records[vid_name])
     
     # Calculate Rectangle segments for pink highlighting
@@ -230,22 +223,32 @@ for vid_name in psnr_records.keys():
             active = False
     if active: rect_end.append(len(vid_gt)-1)
 
+    # --- Normalized anomaly score plot ---
     plt.figure(figsize=(12, 5))
     plt.plot(vid_scores, label='Anomaly Score', color='blue')
     plt.ylim(-0.05, 1.05)
-    plt.title(f'Video: {vid_name}' + (' (motion masked)' if args.motion_mask else ''))
+    plt.title(f'Video: {vid_name} (normalized)' + (' (motion masked)' if args.motion_mask else ''))
     plt.xlabel('Frames')
     plt.ylabel('Score')
-    
-    # Draw Pink Rectangles
     ax = plt.gca()
     for rs, re in zip(rect_start, rect_end):
         ax.add_patch(Rectangle((rs, 0), re-rs, 1, facecolor="pink", alpha=0.5))
-    
     plt.legend()
-    plot_name = f"summary_plot_{vid_name}.png"
-    summary_plot_path = os.path.join(save_plot_dir,plot_name)
-    plt.savefig(summary_plot_path)
+    plt.savefig(os.path.join(save_plot_dir, f"summary_plot_{vid_name}.png"))
+    plt.close()
+
+    # --- Raw (unnormalized) PSNR plot ---
+    plt.figure(figsize=(12, 5))
+    plt.plot(vid_raw, label='Raw PSNR', color='green')
+    plt.title(f'Video: {vid_name} (raw PSNR)' + (' (motion masked)' if args.motion_mask else ''))
+    plt.xlabel('Frames')
+    plt.ylabel('PSNR')
+    ax = plt.gca()
+    y_min, y_max = vid_raw.min(), vid_raw.max()
+    for rs, re in zip(rect_start, rect_end):
+        ax.add_patch(Rectangle((rs, y_min), re-rs, y_max-y_min, facecolor="pink", alpha=0.5))
+    plt.legend()
+    plt.savefig(os.path.join(save_plot_dir, f"summary_plot_raw_{vid_name}.png"))
     plt.close()
 
 print("Evaluation finished. Summary plots saved.")

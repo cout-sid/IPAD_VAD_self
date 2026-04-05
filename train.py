@@ -194,7 +194,7 @@ if args.start_epoch < args.epochs:
         # Loading the trained model
         model_dict = torch.load(args.model_dir, weights_only=False)
         model_weight = model_dict['model']
-        model.load_state_dict(model_weight.state_dict())
+        model.load_state_dict(model_weight.state_dict(),strict=False)
         optimizer.load_state_dict(model_dict['optimizer'])
         # model.cuda()
         model.to(device)

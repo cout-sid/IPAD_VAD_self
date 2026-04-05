@@ -55,7 +55,7 @@ class VST(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(2048,200),
         )
-        self.transformer_decoder = VST3DDecoder_sixteen(chnum_out=3)
+        self.transformer_decoder = VST3DDecoder(chnum_out=3)
         # self.encoder = Reconstruction3DEncoder(chnum_in=3)  # RGB
         # self.decoder = Reconstruction3DDecoder(chnum_in=3)  # RGB
 

@@ -33,7 +33,7 @@ def np_load_frame(filename, resize_height, resize_width, grayscale=False):
 # shape => (h,w,3)
 
 
-def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.8, low_weight=0.2, blur_sigma=4):
+def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.8, low_weight=0.1, blur_sigma=8):
     """
     Compute a SOFT motion mask for the middle frame.
     Static blocks get low_weight (not 0), motion blocks get 1.0.
