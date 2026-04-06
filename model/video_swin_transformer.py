@@ -32,11 +32,11 @@ class VST(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(2048,200),
         )
-        
+
         if use_skip:
             self.transformer_decoder = VST3d_wavnet(chnum_out=3, use_skip=use_skip)
         else:
-            self.transformer_decoder = VST3d_wavnet(chnum_out=3)
+            self.transformer_decoder = VST3DDecoder(chnum_out=3)
             
 
         self.wavelet_att = AdvancedWaveletAttention(channels=768)

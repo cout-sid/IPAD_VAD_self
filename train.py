@@ -63,7 +63,7 @@ parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memo
 parser.add_argument('--all_frame_error', action='store_true', help='whether to use whole batch or only mid frame for error')
 
 parser.add_argument('--motion_mask', action='store_true', help='use motion mask for loss')
-parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
+parser.add_argument('--block_size', type=int, default=32, help='block size for motion mask')
 parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask')
 parser.add_argument('--use_skip', action='store_true', help='enable DWT U-Net skip connections in decoder')
 
@@ -112,7 +112,7 @@ print('ccccccccccccccccccccccccccccccccccccc')
 print("BEFORE TRAIN DATASET")
 train_dataset = Reconstruction3DDataLoader(train_folder, transforms.Compose([transforms.ToTensor()]),
                                            resize_height=args.h, resize_width=args.w, num_frames=args.num_frames, dataset=args.dataset_type,
-                                             img_extension=img_extension,motion_mask=True, block_size=16, mask_ratio=0.5)
+                                             img_extension=img_extension,motion_mask=args.motion_mask, block_size=args.block_size, mask_ratio=args.mask_ratio)
 print('ccccccccccccccccccccccccccccccccccccc')
 print("TRAIN DATASET LOADED")
 
@@ -143,11 +143,7 @@ val_batch = data.DataLoader(val_subset, batch_size=args.batch_size,
 
 print(f"Train: {len(train_subset)} samples, Val: {len(val_subset)} samples")
 
-# Early stopping config
-patience = 5          # stop after 5 epochs with no improvement
-best_val_loss = float('inf')
-epochs_no_improve = 0
-best_epoch = 0
+
 
 
 
@@ -207,6 +203,7 @@ if args.start_epoch < args.epochs:
     epoch_entropy_list = []
     epoch_period_list = []
     epoch_ssim_list = []
+    epoch_val_list = []
 
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
@@ -235,14 +232,29 @@ if args.start_epoch < args.epochs:
             net_in = imgs['batch'].to(device)
             img_index = imgs['index'].to(device)
 
+            ########## APPLY BINARY MASK TO INPUT (MAE-style inpainting)
+            # net_in (batch_size, 3, num_frames, H, W)
+            if args.motion_mask:
+                mask = imgs['motion_mask'].to(device)       # (B, H, W) binary: 0=static, 1=motion
+                mask_expanded = mask.unsqueeze(1)            # (B, 1, H, W)
+                # Expand mask across channels and all temporal frames
+                mask_tube = mask_expanded.unsqueeze(2)       # (B, 1, 1, H, W)
+                # Keep original unmasked input for loss computation
+                net_in_original = net_in.clone()
+                # Mask the input: zero out static regions across the whole clip
+                net_in = net_in * mask_tube                  # (B, 3, T, H, W) * (B, 1, 1, H, W)
+
             ########## TRAIN GENERATOR
-            # net_in (batch_size,3,num_frames,H,W)
             Recon_frames = model(net_in)
             outputs = Recon_frames['output']
             att_w = Recon_frames['att']
             recon_index = Recon_frames['recon_index']
 
-            pixel_loss = loss_func_mse(outputs, net_in)  # (B,3,D,H,W)
+            # Loss is computed against ORIGINAL unmasked input
+            if args.motion_mask:
+                pixel_loss = loss_func_mse(outputs, net_in_original)  # (B,3,D,H,W)
+            else:
+                pixel_loss = loss_func_mse(outputs, net_in)           # (B,3,D,H,W)
 
 
             # memory entropy loss
@@ -262,17 +274,9 @@ if args.start_epoch < args.epochs:
             mid = pixel_loss.shape[2] // 2
 
 
-            if args.motion_mask:
-                mask = imgs['motion_mask'].to(device)  # (B, H, W)
-                mask_expanded = mask.unsqueeze(1)       # (B, 1, H, W)
-
             if not args.all_frame_error:
-                # Middle frame only
-                if args.motion_mask:
-                    masked_diff = pixel_loss[:, :, mid, :, :] * mask_expanded  # (B, C, H, W)
-                    loss_recon = masked_diff.sum() / (mask_expanded.sum() * 3 + 1e-8)
-                else:
-                    loss_recon = pixel_loss[:, :, mid, :, :].mean()
+                # Middle frame only — full MSE (no mask weighting needed, model must reconstruct everything)
+                loss_recon = pixel_loss[:, :, mid, :, :].mean()
 
                 # out_flat = outputs.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
                 # inp_flat = net_in.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)
@@ -280,14 +284,8 @@ if args.start_epoch < args.epochs:
                 loss_ssim = torch.tensor(0.0, device=device)
 
             else:
-                # All frames
-                if args.motion_mask:
-                    mask_tube = mask_expanded.unsqueeze(2)  # (B, 1, 1, H, W)
-                    masked_diff = pixel_loss * mask_tube    # (B, C, D, H, W)
-                    num_frames = pixel_loss.shape[2]
-                    loss_recon = masked_diff.sum() / (mask_expanded.sum() * 3 * num_frames + 1e-8)
-                else:
-                    loss_recon = pixel_loss.mean()
+                # All frames — full MSE
+                loss_recon = pixel_loss.mean()
 
                 loss_ssim = torch.tensor(0.0, device=device)
 
@@ -375,48 +373,47 @@ if args.start_epoch < args.epochs:
             torch.save(model_dict, os.path.join(log_dir, 'model_final.pth'))
 
         # ---------------------------------------------------------
-        # --- Validation for early stopping ---
+        # --- Validation (no early stopping, just tracking) ---
         # ---------------------------------------------------------
 
-        epochs_ran = epoch +1
+        epochs_ran = epoch + 1
 
-        # model.eval()
-        # val_loss_total = 0
-        # val_count = 0
+        model.eval()
+        val_loss_total = 0
+        val_count = 0
 
-        # with torch.no_grad():
-        #     for val_imgs in val_batch:
-        #         val_in = val_imgs['batch'].to(device)
-        #         val_out = model(val_in)
-        #         val_recon = val_out['output']
+        with torch.no_grad():
+            for val_imgs in val_batch:
+                val_in = val_imgs['batch'].to(device)
 
-        #         mid = val_in.shape[2] // 2
-        #         val_mse = loss_func_mse(val_recon[:, :, mid], val_in[:, :, mid]).mean().item()
-        #         val_loss_total += val_mse
-        #         val_count += 1
+                # Apply same masking as training if motion_mask is enabled
+                if args.motion_mask:
+                    val_mask = val_imgs['motion_mask'].to(device)        # (B, H, W)
+                    val_mask_tube = val_mask.unsqueeze(1).unsqueeze(2)    # (B, 1, 1, H, W)
+                    val_in_original = val_in.clone()
+                    val_in = val_in * val_mask_tube
 
-        # val_loss_avg = val_loss_total / val_count
-        # print(f'Validation MSE (middle frame): {val_loss_avg:.9f}')
+                val_out = model(val_in)
+                val_recon = val_out['output']
 
-        
+                # Compute loss same way as training
+                if args.motion_mask:
+                    val_pixel_loss = loss_func_mse(val_recon, val_in_original)
+                else:
+                    val_pixel_loss = loss_func_mse(val_recon, val_in)
 
-        # # Check for improvement
-        # if val_loss_avg < best_val_loss* 0.95:
-        #     best_val_loss = val_loss_avg
-        #     best_epoch = epoch + 1
-        #     epochs_no_improve = 0
-        #     # Save best model
-        #     torch.save(model_dict, os.path.join(log_dir, 'model_best.pth'))
-        #     print(f'New best model saved (epoch {best_epoch})')
-        # else:
-        #     epochs_no_improve += 1
-        #     print(f'No improvement for {epochs_no_improve}/{patience} epochs')
+                if not args.all_frame_error:
+                    val_mid = val_pixel_loss.shape[2] // 2
+                    val_mse = val_pixel_loss[:, :, val_mid, :, :].mean().item()
+                else:
+                    val_mse = val_pixel_loss.mean().item()
 
-        # if epochs_no_improve >= patience:
-        #     print(f'\nEarly stopping triggered at epoch {epoch + 1}')
-        #     print(f'Best epoch was {best_epoch} with val MSE {best_val_loss:.9f}')
-            
-        #     break
+                val_loss_total += val_mse
+                val_count += 1
+
+        val_loss_avg = val_loss_total / val_count
+        epoch_val_list.append(round(val_loss_avg, 9))
+        print(f'Validation Recon Loss: {val_loss_avg:.9f}')
 
         model.train()
             
@@ -507,12 +504,13 @@ print(f"Validation images saved to {validate_dir}/")
 
 # 1. Combine your lists into a dictionary
 loss_data = {
-    'epoch': range(1, len(epoch_mean_list) + 1), # Automatically creates epoch numbers 1, 2, 3...
+    'epoch': range(1, len(epoch_mean_list) + 1),
     'mean_loss': epoch_mean_list,
     'entropy_loss': epoch_entropy_list,
     'period_loss': epoch_period_list,
-    'ssim_loss':epoch_ssim_list,
-    'overall_loss': epoch_overall_list
+    'ssim_loss': epoch_ssim_list,
+    'overall_loss': epoch_overall_list,
+    'val_loss': epoch_val_list
 }
 
 # 2. Convert to a DataFrame and save
@@ -540,9 +538,22 @@ plt.grid(True)
 
 # Save plot
 plt.savefig(os.path.join(log_dir, "loss_vs_epoch.png"))
+plt.close()
 
-# Show plot
-# plt.show()
+# --- Train vs Val plot in separate folder ---
+train_val_plot_dir = os.path.join(log_dir, 'train_vs_val_plot')
+os.makedirs(train_val_plot_dir, exist_ok=True)
+
+plt.figure(figsize=(10, 6))
+plt.plot(epochs, epoch_val_list, label='Val Recon Loss', color='orange')
+plt.xlabel('Epoch')
+plt.ylabel('Recon Loss')
+plt.title('Validation Reconstruction Loss')
+plt.legend()
+plt.grid(True)
+plt.savefig(os.path.join(train_val_plot_dir, 'val_loss.png'))
+plt.close()
+print(f"Train vs Val plot saved to {train_val_plot_dir}/")
 
 toc = time.time()
 print('Training is finished')

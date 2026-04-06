@@ -144,9 +144,6 @@ class VST3DDecoder(nn.Module):
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(384),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv3d(384, 384, kernel_size=3, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout3d(p=0.3)  # Single dropout at the end of the block
         )
 
         # Stage 2: (384, 4, 16, 16) → (256, 8, 32, 32)  [temporal + spatial upsample]
@@ -155,9 +152,6 @@ class VST3DDecoder(nn.Module):
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv3d(256, 256, kernel_size=3, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout3d(p=0.3)  # Single dropout at the end of the block
         )
 
         # Stage 3: (256, 8, 32, 32) → (128, 8, 64, 64)  [spatial only]
@@ -167,12 +161,9 @@ class VST3DDecoder(nn.Module):
                                output_padding=(0,1,1)),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv3d(128, 128, kernel_size=3, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout3d(p=0.3)  # Single dropout at the end of the block
         )
 
-        # Stage 4: (128, 8, 64, 64) → (64, 8, 128, 128)  [spatial only]
+        # Stage 4: (128, 8, 64, 64) → (64, 8, 128, 128)  [spatial only + extra conv]
         self.up4 = nn.Sequential(
             nn.ConvTranspose3d(128, 64, kernel_size=(3,3,3),
                                stride=(1,2,2), padding=(1,1,1),
@@ -181,10 +172,9 @@ class VST3DDecoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv3d(64, 64, kernel_size=3, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout3d(p=0.3)  # Single dropout at the end of the block
         )
 
-        # Stage 5: (64, 8, 128, 128) → (C, 8, 256, 256)  [spatial only]
+        # Stage 5: (64, 8, 128, 128) → (C, 8, 256, 256)  [spatial only + extra conv]
         self.up5 = nn.Sequential(
             nn.ConvTranspose3d(64, 32, kernel_size=(3,3,3),
                                stride=(1,2,2), padding=(1,1,1),
@@ -192,7 +182,7 @@ class VST3DDecoder(nn.Module):
             nn.BatchNorm3d(32),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv3d(32, chnum_out, kernel_size=3, padding=1),
-            nn.Tanh(), # No dropout here before final projection
+            nn.Tanh(),
         )
 
     def forward(self, x):

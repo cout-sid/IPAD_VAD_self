@@ -11,7 +11,7 @@ from PIL import Image
 rng = np.random.RandomState(2020)
 
 def np_load_frame(filename, resize_height, resize_width, grayscale=False):
-    grayscale = False
+    grayscale=False
     """
     Load image path and convert it to numpy.ndarray. Notes that the color channels are BGR and the color space
     is normalized from [0, 255] to [-1, 1].
@@ -33,7 +33,7 @@ def np_load_frame(filename, resize_height, resize_width, grayscale=False):
 # shape => (h,w,3)
 
 
-def compute_motion_mask(frames, mid_idx, block_size=16, mask_ratio=0.8, low_weight=0.1, blur_sigma=8):
+def compute_motion_mask(frames, mid_idx, block_size=32, mask_ratio=0.8, low_weight=0.1, blur_sigma=8):
     """
     Compute a SOFT motion mask for the middle frame.
     Static blocks get low_weight (not 0), motion blocks get 1.0.
@@ -189,12 +189,14 @@ class Reconstruction3DDataLoader(data.Dataset):
         img['batch'] = np.stack(batch, axis=1)
         img['index'] = frame_name*200//len(self.videos[video_name]['frame'])
         
-        # Compute motion mask if enabled
+        # Compute motion mask if enabled — binarize for MAE-style input masking
         if self.motion_mask:
             mid_idx = self._num_frames // 2
-            mask = compute_motion_mask(raw_frames, mid_idx, 
-                                       self.block_size, self.mask_ratio)
-            img['motion_mask'] = mask  # (H, W) float32, 0=static 1=motion
+            soft_mask = compute_motion_mask(raw_frames, mid_idx, 
+                                            self.block_size, self.mask_ratio)
+            # Convert soft mask to binary: >0.5 → 1 (motion/keep), ≤0.5 → 0 (static/mask out)
+            binary_mask = (soft_mask > 0.5).astype(np.float32)
+            img['motion_mask'] = binary_mask  # (H, W) float32, 0=static 1=motion
         
         return img
 
@@ -255,7 +257,7 @@ class TestDataLoader(Reconstruction3DDataLoader):
             target_frame_path = self.videos[video_name]['frame'][frame_idx + i]
             
             image = np_load_frame(target_frame_path, self._resize_height, 
-                                  self._resize_width, grayscale=True)
+                                  self._resize_width, grayscale=False)
             
             if self.motion_mask:
                 raw_frames.append(image)
@@ -316,7 +318,7 @@ class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
 
         for i in range(self._num_frames):
             image = np_load_frame(self.videos[video_name]['frame'][min(frame_name + i*jump, len(self.videos[video_name]['frame'])-1)], self._resize_height,
-                                  self._resize_width, grayscale=True)
+                                  self._resize_width, grayscale=False)
 
             if self.transform is not None:
                 batch.append(self.transform(image))
@@ -324,7 +326,7 @@ class Reconstruction3DDataLoaderJump(Reconstruction3DDataLoader):
         if self.return_normal_seq:
             for i in range(self._num_frames):
                 image = np_load_frame(self.videos[video_name]['frame'][min(frame_name + i, len(self.videos[video_name]['frame'])-1)], self._resize_height,
-                                      self._resize_width, grayscale=True)
+                                      self._resize_width, grayscale=False)
 
                 if self.transform is not None:
                     normal_batch.append(self.transform(image))
