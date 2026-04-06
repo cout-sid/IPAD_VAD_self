@@ -448,7 +448,7 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 3-5: spatial-only upsampling
         x = self.up3(x)   # (B,  96, T, 64, 64)
-        x = self.dwt_enhance(x)   # DWT boost — same shape
+        # x = self.dwt_enhance(x)   # DWT boost — same shape
         x = self.up4(x)   # (B,  48, T, 128, 128)
         x = self.up5(x)   # (B,   3, T, 256, 256)
         return x
