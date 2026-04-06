@@ -211,7 +211,66 @@ class VST3DDecoder(nn.Module):
 
 
 
+
+class DWTFeatureEnhance(nn.Module):
+    def __init__(self, channels, wave='db4'):
+        super().__init__()
+        self.dwt = DWTForward(J=1, wave=wave, mode='zero')
+        self.idwt = DWTInverse(wave=wave, mode='zero')
+        
+        # Predict 3 boost values (lh, hl, hh) per channel from the LL band
+        self.boost_predictor = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),          # (B, C, 1, 1)
+            nn.Flatten(1),                     # (B, C)
+            nn.Linear(channels, channels // 4),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels // 4, channels * 3),  # 3 boosts per channel
+            nn.Softplus(),                     # ensures boost > 0, no upper cap
+        )
+        
+        self.fusion = nn.Sequential(
+            nn.Conv3d(channels, channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(channels),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+    def forward(self, x):
+        B, C, D, H, W = x.shape
+        residual = x
+        
+        frames_out = []
+        for t in range(D):
+            frame = x[:, :, t, :, :]
+            
+            yl, yh = self.dwt(frame)
+            lh = yh[0][:, :, 0]
+            hl = yh[0][:, :, 1]
+            hh = yh[0][:, :, 2]
+            
+            # Predict boost from low-freq content
+            boosts = self.boost_predictor(yl)  # (B, C*3)
+            boosts = boosts.view(B, 3, C, 1, 1)
+            
+            lh = lh * boosts[:, 0]
+            hl = hl * boosts[:, 1]
+            hh = hh * boosts[:, 2]
+            
+            yh_boosted = [torch.stack([lh, hl, hh], dim=2)]
+            frame_out = self.idwt((yl, yh_boosted))
+            frame_out = frame_out[:, :, :H, :W]
+            
+            frames_out.append(frame_out)
+        
+        x_out = torch.stack(frames_out, dim=2)
+        x_out = self.fusion(x_out) + residual
+        return x_out
+
 class DWTChannelAttention3D(nn.Module):
+    """
+    Process skip connections using only high-frequency DWT sub-bands.
+    Discards LL (content) to prevent anomaly bypass through skips.
+    Only LH, HL, HH (edges/textures) are kept and attended.
+    """
     def __init__(self, channels, reduction=8, wave='db4'):
         super().__init__()
         self.channels = channels
@@ -219,13 +278,14 @@ class DWTChannelAttention3D(nn.Module):
         self.dwt = DWTForward(J=1, wave=wave, mode='zero')
         self.idwt = DWTInverse(wave=wave, mode='zero')
         
-        # LL (C channels) + LH,HL,HH (3*C channels) = 4C
+        # Attention only on high-freq bands (3 sub-bands = 3C)
+        att_channels = channels * 3
         self.channel_att = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(1),
-            nn.Linear(channels * 4, channels * 4 // reduction, bias=False),
+            nn.Linear(att_channels, att_channels // reduction, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(channels * 4 // reduction, channels * 4, bias=False),
+            nn.Linear(att_channels // reduction, att_channels, bias=False),
             nn.Sigmoid()
         )
         
@@ -243,37 +303,34 @@ class DWTChannelAttention3D(nn.Module):
         for t in range(D):
             frame = x[:, :, t, :, :]  # (B, C, H, W)
             
-            # DWT: yl = (B, C, H/2, W/2), yh = list of (B, C, 3, H/2, W/2)
             yl, yh = self.dwt(frame)
-            
-            # yh[0] shape: (B, C, 3, H', W') — 3 sub-bands (LH, HL, HH)
-            lh = yh[0][:, :, 0]  # (B, C, H', W')
+            lh = yh[0][:, :, 0]
             hl = yh[0][:, :, 1]
             hh = yh[0][:, :, 2]
             
-            # Concatenate all sub-bands: (B, 4C, H', W')
-            coeffs = torch.cat([yl, lh, hl, hh], dim=1)
+            # Only use high-freq bands, discard LL
+            high_freq = torch.cat([lh, hl, hh], dim=1)  # (B, 3C, H', W')
             
-            # Channel attention
-            att_weights = self.channel_att(coeffs).view(B, 4 * C, 1, 1)
-            coeffs = coeffs * att_weights
+            # Channel attention on high-freq only
+            att_weights = self.channel_att(high_freq).view(B, 3 * C, 1, 1)
+            high_freq = high_freq * att_weights
             
-            # Split back
-            yl_att, lh_att, hl_att, hh_att = torch.chunk(coeffs, 4, dim=1)
+            lh_att, hl_att, hh_att = torch.chunk(high_freq, 3, dim=1)
+            
+            # IDWT with zeroed LL — reconstruct only from high-freq
+            yl_zero = torch.zeros_like(yl)
             yh_att = [torch.stack([lh_att, hl_att, hh_att], dim=2)]
             
-            # IDWT
-            frame_out = self.idwt((yl_att, yh_att))
-            
-            # Handle size mismatch from DWT padding
+            frame_out = self.idwt((yl_zero, yh_att))
             frame_out = frame_out[:, :, :H, :W]
             
             output_frames.append(frame_out)
         
-        x_out = torch.stack(output_frames, dim=2)  # (B, C, D, H, W)
+        x_out = torch.stack(output_frames, dim=2)
         x_out = self.fusion(x_out) + residual
         
         return x_out
+
 
 class VST3d_wavnet(nn.Module):
     """
@@ -292,6 +349,8 @@ class VST3d_wavnet(nn.Module):
         super().__init__()
         self.chnum_out = chnum_out
         self.use_skip = use_skip
+
+        self.dwt_enhance = DWTFeatureEnhance(channels=96, wave='db4')
 
         # Stage 1: (768, T/4, 8, 8) → (384, T/2, 16, 16)  [temporal + spatial upsample]
         self.up1 = nn.Sequential(
@@ -389,6 +448,7 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 3-5: spatial-only upsampling
         x = self.up3(x)   # (B,  96, T, 64, 64)
+        x = self.dwt_enhance(x)   # DWT boost — same shape
         x = self.up4(x)   # (B,  48, T, 128, 128)
         x = self.up5(x)   # (B,   3, T, 256, 256)
         return x
