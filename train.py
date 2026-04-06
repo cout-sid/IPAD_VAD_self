@@ -66,7 +66,7 @@ parser.add_argument('--all_frame_error', action='store_true', help='whether to u
 parser.add_argument('--motion_mask', action='store_true', help='use motion mask for loss')
 parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
 parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask')
-parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask')
+
 
 ##################
 
