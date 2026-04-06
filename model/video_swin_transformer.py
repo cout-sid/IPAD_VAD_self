@@ -11,7 +11,7 @@ from .motion_attention_mask import MotionAttentionMask
 
 
 class VST(torch.nn.Module):
-    def __init__(self, mem_dim=2000, shrink_thres=0.0025, use_skip=True):  # for reconstruction
+    def __init__(self, mem_dim=2000, shrink_thres=0.0025, use_skip=False):  # for reconstruction
         super(VST, self).__init__()
         self.reconstruction = True
         self.use_skip = use_skip
@@ -32,10 +32,12 @@ class VST(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(2048,200),
         )
+        
         if use_skip:
             self.transformer_decoder = VST3d_wavnet(chnum_out=3, use_skip=use_skip)
         else:
-            self.transformer_decoder=VST3DDecoder(chnum_out=3)
+            self.transformer_decoder = VST3d_wavnet(chnum_out=3)
+            
 
         self.wavelet_att = AdvancedWaveletAttention(channels=768)
 

@@ -345,7 +345,7 @@ class VST3d_wavnet(nn.Module):
     use_skip=False disables skip connections for ablation.
     """
 
-    def __init__(self, chnum_out, use_skip=True, dropout=0.1):
+    def __init__(self, chnum_out, use_skip=False, dropout=0.1):
         super().__init__()
         self.chnum_out = chnum_out
         self.use_skip = use_skip
