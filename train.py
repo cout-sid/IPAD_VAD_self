@@ -315,7 +315,7 @@ if args.start_epoch < args.epochs:
                 print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
                 print('Loss_ssim: {:.6f}'.format(loss_ssim.item()))
             
-            # if j==5:
+            if j==5:
             #     if args.motion_mask:
             #         mask_np = mask[0].cpu().numpy()
             #         orig = (net_in[0, :, mid].cpu().numpy() + 1) * 127.5
@@ -323,7 +323,7 @@ if args.start_epoch < args.epochs:
             #         masked_img = (orig.astype(np.float32) * np.stack([mask_np]*3, axis=-1)).astype(np.uint8)
             #         cv2.imwrite(f"masked_sample_{epoch}.png", masked_img)
             #         print(f"Saved masked_sample_{epoch}.png")
-            #     break
+                break
                 
 
             pbar.set_postfix(batch=j)

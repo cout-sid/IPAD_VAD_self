@@ -299,29 +299,23 @@ class FourierFeatureEnhance(nn.Module):
         for t in range(D):
             frame = x[:, :, t, :, :]          # (B, C, H, W)
 
-            # FFT — go to frequency domain
-            fft = torch.fft.rfft2(frame, norm='ortho')   # (B, C, H, W//2+1) complex
+            # FFT — go to frequency domain (full complex spectrum)
+            fft = torch.fft.fft2(frame, norm='ortho')          # (B, C, H, W) complex
 
             # separate magnitude and phase
-            magnitude = fft.abs()              # (B, C, H, W//2+1)
-            phase     = fft.angle()            # (B, C, H, W//2+1)
+            magnitude = fft.abs()              # (B, C, H, W)
+            phase     = fft.angle()            # (B, C, H, W)
 
-            # build high-freq mask 
-            freq_h = torch.fft.rfftfreq(H, device=x.device)   # (H,)
-            freq_w = torch.fft.rfftfreq(W, device=x.device)   # (W//2+1,)
+            # build high-freq mask
+            freq_h = torch.fft.fftfreq(H, device=x.device)    # (H,)
+            freq_w = torch.fft.fftfreq(W, device=x.device)    # (W,)
             freq_grid = (freq_h.unsqueeze(1) ** 2 +
-                         freq_w.unsqueeze(0) ** 2).sqrt()      # (H, W//2+1)
-            hf_mask = (freq_grid > self.hf_threshold).float()  # binary, no directionality
+                         freq_w.unsqueeze(0) ** 2).sqrt()      # (H, W)
+            hf_mask = (freq_grid > self.hf_threshold).float()  # binary
 
             # predict boost from global average of magnitude (low-freq dominated)
-            # note: we pool over magnitude, not a clean LL band like DWT
-            mag_pooled = magnitude.mean(dim=[-2, -1], keepdim=True)  # (B, C, 1, 1)
-            boosts = self.boost_predictor(mag_pooled.squeeze(-1).squeeze(-1)
-                                          .unsqueeze(-1).unsqueeze(-1)
-                                          .expand(B, C, H, W//2+1)
-                                          [:, :, :1, :1]
-                                          .contiguous()
-                                          .view(B, C, 1, 1))   # (B, C)
+            # mag_pooled = magnitude.mean(dim=[-2, -1], keepdim=True)  # (B, C, 1, 1)
+            boosts = self.boost_predictor(magnitude)           # (B, C)
             boosts = boosts.view(B, C, 1, 1)                   # (B, C, 1, 1)
 
             # boost high-freq magnitude
@@ -330,8 +324,8 @@ class FourierFeatureEnhance(nn.Module):
             # reconstruct complex spectrum from boosted magnitude + original phase
             fft_boosted = torch.polar(magnitude_boosted, phase)
 
-            # iFFT back to spatial domain
-            frame_out = torch.fft.irfft2(fft_boosted, s=(H, W), norm='ortho')  # (B, C, H, W)
+            # iFFT back to spatial domain, take real part to discard numerical noise
+            frame_out = torch.fft.ifft2(fft_boosted, norm='ortho').real  # (B, C, H, W)
             frames_out.append(frame_out)
 
         x_out = torch.stack(frames_out, dim=2)   # (B, C, D, H, W)
@@ -532,4 +526,3 @@ class VST3d_wavnet(nn.Module):
         x = self.up4(x)   # (B,  48, T, 128, 128)
         x = self.up5(x)   # (B,   3, T, 256, 256)
         return x
-    
