@@ -66,7 +66,7 @@ parser.add_argument('--motion_mask', action='store_true', help='use motion mask 
 parser.add_argument('--block_size', type=int, default=32, help='block size for motion mask')
 parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask')
 parser.add_argument('--use_skip', action='store_true', help='enable DWT U-Net skip connections in decoder')
-
+parser.add_argument('--use_wavelet', action='store_true', help='enable wavelet in decoder')
 
 ##################
 
@@ -165,7 +165,7 @@ epochs_ran = 0
 
 if args.start_epoch < args.epochs:
     if args.model=='VST':
-        model = VST(mem_dim=args.mem_dim, use_skip=args.use_skip)
+        model = VST(mem_dim=args.mem_dim,use_wavelet=args.use_wavelet, use_skip=args.use_skip)
     else:
         model = convAE()
     

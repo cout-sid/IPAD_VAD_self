@@ -7,6 +7,7 @@ from pytorch_wavelets import DWTForward, DWTInverse
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import torch.fft
 
 class Reconstruction3DEncoder(nn.Module):
     def __init__(self, chnum_in):
@@ -255,6 +256,88 @@ class DWTFeatureEnhance(nn.Module):
         x_out = self.fusion(x_out) + residual
         return x_out
 
+class FourierFeatureEnhance(nn.Module):
+    """
+    Fourier-based feature enhancement — comparison baseline against DWTFeatureEnhance.
+    
+    Applies FFT along spatial dims, learns to boost high-frequency components,
+    then reconstructs via iFFT. 
+    
+    Input/Output: (B, C, D, H, W) — shape unchanged.
+    """
+    def __init__(self, channels):
+        super().__init__()
+        self.channels = channels
+
+        # Predict high-freq boost from global average of feature map
+
+        self.boost_predictor = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),              # (B, C, 1, 1)
+            nn.Flatten(1),                         # (B, C)
+            nn.Linear(channels, channels // 4),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels // 4, channels),   # one boost per channel
+            nn.Softplus(),                         # boost > 0
+        )
+
+        # same fusion as DWTFeatureEnhance for fair comparison
+        self.fusion = nn.Sequential(
+            nn.Conv3d(channels, channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(channels),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+        # threshold: frequency components above this (as fraction of max freq)
+        # are considered "high frequency"
+        self.hf_threshold = 0.4
+
+    def forward(self, x):
+        B, C, D, H, W = x.shape
+        residual = x
+
+        frames_out = []
+        for t in range(D):
+            frame = x[:, :, t, :, :]          # (B, C, H, W)
+
+            # FFT — go to frequency domain
+            fft = torch.fft.rfft2(frame, norm='ortho')   # (B, C, H, W//2+1) complex
+
+            # separate magnitude and phase
+            magnitude = fft.abs()              # (B, C, H, W//2+1)
+            phase     = fft.angle()            # (B, C, H, W//2+1)
+
+            # build high-freq mask 
+            freq_h = torch.fft.rfftfreq(H, device=x.device)   # (H,)
+            freq_w = torch.fft.rfftfreq(W, device=x.device)   # (W//2+1,)
+            freq_grid = (freq_h.unsqueeze(1) ** 2 +
+                         freq_w.unsqueeze(0) ** 2).sqrt()      # (H, W//2+1)
+            hf_mask = (freq_grid > self.hf_threshold).float()  # binary, no directionality
+
+            # predict boost from global average of magnitude (low-freq dominated)
+            # note: we pool over magnitude, not a clean LL band like DWT
+            mag_pooled = magnitude.mean(dim=[-2, -1], keepdim=True)  # (B, C, 1, 1)
+            boosts = self.boost_predictor(mag_pooled.squeeze(-1).squeeze(-1)
+                                          .unsqueeze(-1).unsqueeze(-1)
+                                          .expand(B, C, H, W//2+1)
+                                          [:, :, :1, :1]
+                                          .contiguous()
+                                          .view(B, C, 1, 1))   # (B, C)
+            boosts = boosts.view(B, C, 1, 1)                   # (B, C, 1, 1)
+
+            # boost high-freq magnitude
+            magnitude_boosted = magnitude * (1 + boosts * hf_mask)
+
+            # reconstruct complex spectrum from boosted magnitude + original phase
+            fft_boosted = torch.polar(magnitude_boosted, phase)
+
+            # iFFT back to spatial domain
+            frame_out = torch.fft.irfft2(fft_boosted, s=(H, W), norm='ortho')  # (B, C, H, W)
+            frames_out.append(frame_out)
+
+        x_out = torch.stack(frames_out, dim=2)   # (B, C, D, H, W)
+        x_out = self.fusion(x_out) + residual
+        return x_out
+
 class DWTChannelAttention3D(nn.Module):
     """
     Process skip connections using only high-frequency DWT sub-bands.
@@ -340,7 +423,10 @@ class VST3d_wavnet(nn.Module):
         self.chnum_out = chnum_out
         self.use_skip = use_skip
 
-        self.dwt_enhance = DWTFeatureEnhance(channels=96, wave='db4')
+        self.dwt_enhance_up3 = DWTFeatureEnhance(channels=96, wave='db4')
+        self.dwt_enhance_up2 = DWTFeatureEnhance(channels=192, wave='db4')
+        self.fourier_enhance_up2 = FourierFeatureEnhance(channels=192)
+        self.fourier_enhance_up3 = FourierFeatureEnhance(channels=96)
 
         # Stage 1: (768, T/4, 8, 8) → (384, T/2, 16, 16)  [temporal + spatial upsample]
         self.up1 = nn.Sequential(
@@ -429,6 +515,9 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 2: (384, T/2, 16, 16) → (192, T, 32, 32)
         x = self.up2(x)
+        x = self.dwt_enhance_up2(x)   # DWT boost — same shape
+        # x = self.fourier_enhance_up2(x)
+
 
         # Skip from encoder layer 0 (192-ch)
         if self.use_skip and skips is not None:
@@ -438,7 +527,8 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 3-5: spatial-only upsampling
         x = self.up3(x)   # (B,  96, T, 64, 64)
-        # x = self.dwt_enhance(x)   # DWT boost — same shape
+        x = self.dwt_enhance_up3(x)   # DWT boost — same shape
+        # x = self.fourier_enhance_up3(x)
         x = self.up4(x)   # (B,  48, T, 128, 128)
         x = self.up5(x)   # (B,   3, T, 256, 256)
         return x

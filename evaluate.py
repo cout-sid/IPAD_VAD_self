@@ -31,6 +31,8 @@ parser.add_argument('--motion_mask', action='store_true', help='enable motion ma
 parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
 parser.add_argument('--mask_ratio', type=float, default=0.8, help='fraction of static blocks to mask out')
 parser.add_argument('--use_skip', action='store_true', help='enable DWT U-Net skip connections in decoder')
+parser.add_argument('--use_wavelet', action='store_true', help='enable wavelet in decoder')
+
 
 
 args = parser.parse_args()
@@ -39,7 +41,7 @@ tr_entropy_loss_func = EntropyLossEncap().to(device)
 
 # 1. Load Model
 if args.model == 'VST':
-    model = VST(mem_dim=args.mem_dim, use_skip=args.use_skip)
+    model = VST(mem_dim=args.mem_dim, use_wavelet=args.use_wavelet, use_skip=args.use_skip)
 else:
     model = convAE()
 

@@ -8,10 +8,11 @@ from torch.nn import functional as F
 
 from .wavelet_attention import AdvancedWaveletAttention # Updated from WaveletAttention
 from .motion_attention_mask import MotionAttentionMask
+from .feature_gate import DWTFeatureGate
 
 
 class VST(torch.nn.Module):
-    def __init__(self, mem_dim=2000, shrink_thres=0.0025, use_skip=False):  # for reconstruction
+    def __init__(self, mem_dim=2000, shrink_thres=0.0025, use_wavelet=False,use_skip=False):  # for reconstruction
         super(VST, self).__init__()
         self.reconstruction = True
         self.use_skip = use_skip
@@ -33,13 +34,14 @@ class VST(torch.nn.Module):
             nn.Linear(2048,200),
         )
 
-        if use_skip:
+        if use_wavelet:
             self.transformer_decoder = VST3d_wavnet(chnum_out=3, use_skip=use_skip)
         else:
             self.transformer_decoder = VST3DDecoder(chnum_out=3)
             
 
         self.wavelet_att = AdvancedWaveletAttention(channels=768)
+        self.dwt_gate = DWTFeatureGate(channels=768, wave='db4')
 
     def forward(self, x):
         # Encoder: with or without skip connections
@@ -49,6 +51,8 @@ class VST(torch.nn.Module):
             feature = self.transformer_encoder(x)
             skips = None
 
+        # feature gate
+        feature = self.dwt_gate(feature)
         # Period prediction
         recon_index = self.period(feature)
 
@@ -58,10 +62,13 @@ class VST(torch.nn.Module):
         att = res_mem['att']
 
         # Decoder: pass skips if available
-        if self.use_skip:
-            output = self.transformer_decoder(feature_mem.clone(), skips=skips)
-        else:
-            output = self.transformer_decoder(feature_mem.clone())
+        # if self.use_skip:
+        #     output = self.transformer_decoder(feature_mem.clone(), skips=skips)
+        # else:
+        #     output = self.transformer_decoder(feature_mem.clone())
+
+        output = self.transformer_decoder(feature_mem.clone())
+        
         return {
             'output': output,
             'att': att,
