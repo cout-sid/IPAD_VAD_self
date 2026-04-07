@@ -527,7 +527,6 @@ plt.figure()
 plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
 plt.plot(epochs, epoch_entropy_list, label="Entropy Loss (weighted)")
 plt.plot(epochs, epoch_period_list, label="Period Loss (weighted)")
-plt.plot(epochs, epoch_ssim_list, label="ssim loss (weighted)")
 plt.plot(epochs, epoch_overall_list, label="Total Loss")
 
 plt.xlabel("Epoch")

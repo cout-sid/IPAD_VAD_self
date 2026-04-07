@@ -515,8 +515,8 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 2: (384, T/2, 16, 16) → (192, T, 32, 32)
         x = self.up2(x)
-        x = self.dwt_enhance_up2(x)   # DWT boost — same shape
-        # x = self.fourier_enhance_up2(x)
+        # x = self.dwt_enhance_up2(x)   # DWT boost — same shape
+        x = self.fourier_enhance_up2(x)
 
 
         # Skip from encoder layer 0 (192-ch)
@@ -527,8 +527,8 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 3-5: spatial-only upsampling
         x = self.up3(x)   # (B,  96, T, 64, 64)
-        x = self.dwt_enhance_up3(x)   # DWT boost — same shape
-        # x = self.fourier_enhance_up3(x)
+        # x = self.dwt_enhance_up3(x)   # DWT boost — same shape
+        x = self.fourier_enhance_up3(x)
         x = self.up4(x)   # (B,  48, T, 128, 128)
         x = self.up5(x)   # (B,   3, T, 256, 256)
         return x
