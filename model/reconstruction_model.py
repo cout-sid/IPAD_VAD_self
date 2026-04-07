@@ -204,56 +204,80 @@ class VST3DDecoder(nn.Module):
 
 
 class DWTFeatureEnhance(nn.Module):
+    """
+    DWT sub-band convolution block for abstract feature maps.
+    
+    Instead of scalar-boosting high-freq bands (which amplifies noise
+    equally with useful patterns), this decomposes into LL/LH/HL/HH,
+    processes each band with its own depthwise-separable conv that can
+    learn band-specific spatial transformations, then recombines via IDWT.
+    
+    The LL path is a simple identity (structure preservation).
+    The high-freq paths learn to clean/sharpen within each orientation.
+    A learnable gate per sub-band controls how much correction is applied.
+    The whole block outputs a residual delta — so at init it's near-identity.
+    
+    Input/Output: (B, C, D, H, W) — shape unchanged.
+    """
     def __init__(self, channels, wave='db4'):
         super().__init__()
         self.dwt = DWTForward(J=1, wave=wave, mode='zero')
         self.idwt = DWTInverse(wave=wave, mode='zero')
         
-        # Predict 3 boost values (lh, hl, hh) per channel from the LL band
-        self.boost_predictor = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),          # (B, C, 1, 1)
-            nn.Flatten(1),                     # (B, C)
-            nn.Linear(channels, channels // 4),
-            nn.ReLU(inplace=True),
-            nn.Linear(channels // 4, channels * 3),  # 3 boosts per channel
-            nn.Softplus(),                     # ensures boost > 0, no upper cap
-        )
-        
-        self.fusion = nn.Sequential(
-            nn.Conv3d(channels, channels, kernel_size=3, padding=1),
-            nn.BatchNorm3d(channels),
+        # Per-sub-band depthwise-separable convs:
+        # depthwise (spatial patterns within each channel) + pointwise (cross-channel mixing)
+        # Lightweight: depthwise has C params per 3x3, pointwise has C*C params per 1x1
+        self.conv_lh = nn.Sequential(
+            nn.Conv2d(channels, channels, 3, padding=1, groups=channels, bias=False),
+            nn.Conv2d(channels, channels, 1, bias=False),
+            nn.BatchNorm2d(channels),
             nn.LeakyReLU(0.2, inplace=True),
         )
+        self.conv_hl = nn.Sequential(
+            nn.Conv2d(channels, channels, 3, padding=1, groups=channels, bias=False),
+            nn.Conv2d(channels, channels, 1, bias=False),
+            nn.BatchNorm2d(channels),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.conv_hh = nn.Sequential(
+            nn.Conv2d(channels, channels, 3, padding=1, groups=channels, bias=False),
+            nn.Conv2d(channels, channels, 1, bias=False),
+            nn.BatchNorm2d(channels),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        
+        # Per-sub-band gates: learnable scalars initialized near zero
+        # so the block starts as near-identity and gradually learns corrections
+        self.gate_lh = nn.Parameter(torch.zeros(1, channels, 1, 1))
+        self.gate_hl = nn.Parameter(torch.zeros(1, channels, 1, 1))
+        self.gate_hh = nn.Parameter(torch.zeros(1, channels, 1, 1))
 
     def forward(self, x):
         B, C, D, H, W = x.shape
-        residual = x
         
         frames_out = []
         for t in range(D):
-            frame = x[:, :, t, :, :]
+            frame = x[:, :, t, :, :]               # (B, C, H, W)
             
-            yl, yh = self.dwt(frame)
-            lh = yh[0][:, :, 0]
+            yl, yh = self.dwt(frame)                # yl: (B,C,H',W')  yh: list
+            lh = yh[0][:, :, 0]                     # (B, C, H'', W'')
             hl = yh[0][:, :, 1]
             hh = yh[0][:, :, 2]
             
-            # Predict boost from low-freq content
-            boosts = self.boost_predictor(yl)  # (B, C*3)
-            boosts = boosts.view(B, 3, C, 1, 1)
+            # Process each high-freq band with its own conv path
+            # gate * conv(band) gives the learned correction; add to original band
+            lh = lh + self.gate_lh * self.conv_lh(lh)
+            hl = hl + self.gate_hl * self.conv_hl(hl)
+            hh = hh + self.gate_hh * self.conv_hh(hh)
             
-            lh = lh * boosts[:, 0]
-            hl = hl * boosts[:, 1]
-            hh = hh * boosts[:, 2]
-            
-            yh_boosted = [torch.stack([lh, hl, hh], dim=2)]
-            frame_out = self.idwt((yl, yh_boosted))
+            # LL band passes through unchanged — preserve structure
+            yh_proc = [torch.stack([lh, hl, hh], dim=2)]
+            frame_out = self.idwt((yl, yh_proc))
             frame_out = frame_out[:, :, :H, :W]
             
             frames_out.append(frame_out)
         
-        x_out = torch.stack(frames_out, dim=2)
-        x_out = self.fusion(x_out) + residual
+        x_out = torch.stack(frames_out, dim=2)      # (B, C, D, H, W)
         return x_out
 
 class FourierFeatureEnhance(nn.Module):
@@ -417,10 +441,11 @@ class VST3d_wavnet(nn.Module):
         self.chnum_out = chnum_out
         self.use_skip = use_skip
 
-        self.dwt_enhance_up3 = DWTFeatureEnhance(channels=96, wave='db4')
-        self.dwt_enhance_up2 = DWTFeatureEnhance(channels=192, wave='db4')
-        self.fourier_enhance_up2 = FourierFeatureEnhance(channels=192)
-        self.fourier_enhance_up3 = FourierFeatureEnhance(channels=96)
+        # DWT enhancement at later decoder stages where spatial structure
+        # is closer to the final output — sub-band convs can learn
+        # meaningful orientation-specific patterns at these resolutions
+        self.dwt_enhance_up3 = DWTFeatureEnhance(channels=96, wave='db4')   # after 64x64
+        self.dwt_enhance_up4 = DWTFeatureEnhance(channels=48, wave='db4')   # after 128x128
 
         # Stage 1: (768, T/4, 8, 8) → (384, T/2, 16, 16)  [temporal + spatial upsample]
         self.up1 = nn.Sequential(
@@ -509,9 +534,6 @@ class VST3d_wavnet(nn.Module):
 
         # Stage 2: (384, T/2, 16, 16) → (192, T, 32, 32)
         x = self.up2(x)
-        # x = self.dwt_enhance_up2(x)   # DWT boost — same shape
-        x = self.fourier_enhance_up2(x)
-
 
         # Skip from encoder layer 0 (192-ch)
         if self.use_skip and skips is not None:
@@ -519,10 +541,10 @@ class VST3d_wavnet(nn.Module):
             s0 = self._temporal_align(s0, x.shape[2])       # temporal align
             x = self.fuse0(torch.cat([x, s0], dim=1))       # concat + fuse
 
-        # Stage 3-5: spatial-only upsampling
-        x = self.up3(x)   # (B,  96, T, 64, 64)
-        # x = self.dwt_enhance_up3(x)   # DWT boost — same shape
-        x = self.fourier_enhance_up3(x)
-        x = self.up4(x)   # (B,  48, T, 128, 128)
-        x = self.up5(x)   # (B,   3, T, 256, 256)
+        # Stage 3-5: spatial-only upsampling with DWT enhancement
+        x = self.up3(x)                # (B,  96, T, 64, 64)
+        x = self.dwt_enhance_up3(x)    # sub-band conv refinement at 64x64
+        x = self.up4(x)                # (B,  48, T, 128, 128)
+        x = self.dwt_enhance_up4(x)    # sub-band conv refinement at 128x128
+        x = self.up5(x)                # (B,   3, T, 256, 256)
         return x
