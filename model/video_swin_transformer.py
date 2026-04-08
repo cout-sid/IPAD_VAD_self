@@ -16,7 +16,7 @@ class VST(torch.nn.Module):
         super(VST, self).__init__()
         self.reconstruction = True
         self.use_skip = use_skip
-
+        self.use_wavelet = use_wavelet
         self.transformer_encoder = SwinTransformer3D()
 
         self.mem_rep = MemModule(mem_dim=mem_dim, fea_dim=768, shrink_thres=shrink_thres)
