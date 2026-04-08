@@ -221,7 +221,6 @@ if args.start_epoch < args.epochs:
         model_weight = model_dict['model']
         model.load_state_dict(model_weight.state_dict(),strict=False)
         optimizer.load_state_dict(model_dict['optimizer'])
-        # model.cuda()
         model.to(device)
 
     epoch_mean_list=[]
@@ -234,6 +233,11 @@ if args.start_epoch < args.epochs:
 
     # model.eval()
     for epoch in range(args.start_epoch, args.epochs):
+        if time.time() - tic > 39600:
+            print("\n⛔ Time limit reached (11 hours). Stopping training loop...")
+            break
+
+
         print(epoch+1)
         pseudolossepoch = 0
         lossepoch = 0
@@ -256,6 +260,9 @@ if args.start_epoch < args.epochs:
         pbar = tqdm(train_batch, desc=f"Epoch {epoch+1}", total=len(train_batch), ncols=85, file=orig_stdout)
 
         for j, imgs in enumerate(pbar):
+            if time.time() - tic > 39600:
+                print("\n⛔ Time limit reached (11 hours). Stopping training loop...")
+                break
 
             net_in = imgs['batch'].to(device)
             img_index = imgs['index'].to(device)

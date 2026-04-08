@@ -549,6 +549,6 @@ class VST3d_wavnet(nn.Module):
         x = self.up3(x)                # (B,  96, T, 64, 64)
         x = self.dwt_enhance_up3(x)    # sub-band conv refinement at 64x64
         x = self.up4(x)                # (B,  48, T, 128, 128)
-        x = self.dwt_enhance_up4(x)    # sub-band conv refinement at 128x128
+        # x = self.dwt_enhance_up4(x)    # sub-band conv refinement at 128x128
         x = self.up5(x)                # (B,   3, T, 256, 256)
         return x
