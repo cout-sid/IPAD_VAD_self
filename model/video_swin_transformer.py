@@ -1,5 +1,5 @@
 import torch
-from .reconstruction_model import Reconstruction3DEncoder, Reconstruction3DDecoder, VST3DDecoder, VST3d_wavnet
+from .reconstruction_model import Reconstruction3DEncoder, Reconstruction3DDecoder, VST3DDecoder, VST3d_wavnet , VSThalfDecoder
 from .VST_block import SwinTransformer3D
 from einops import rearrange
 from model import MemModule
@@ -37,7 +37,7 @@ class VST(torch.nn.Module):
         if use_wavelet:
             self.transformer_decoder = VST3d_wavnet(chnum_out=3, use_skip=use_skip)
         else:
-            self.transformer_decoder = VST3DDecoder(chnum_out=3)
+            self.transformer_decoder = VSThalfDecoder(chnum_out=3)
             
 
         self.wavelet_att = AdvancedWaveletAttention(channels=768)
@@ -62,12 +62,12 @@ class VST(torch.nn.Module):
         att = res_mem['att']
 
         # Decoder: pass skips if available
-        # if self.use_skip:
-        #     output = self.transformer_decoder(feature_mem.clone(), skips=skips)
-        # else:
-        #     output = self.transformer_decoder(feature_mem.clone())
+        if self.use_wavelet and self.use_skip:
+            output = self.transformer_decoder(feature_mem.clone(), skips=skips)
+        else:
+            output = self.transformer_decoder(feature_mem.clone())
 
-        output = self.transformer_decoder(feature_mem.clone())
+
         
         return {
             'output': output,

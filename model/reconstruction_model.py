@@ -1,7 +1,8 @@
-import torch.nn as nn
+
 from functools import reduce
 from operator import mul
-import torch
+
+
 
 from pytorch_wavelets import DWTForward, DWTInverse
 import torch
@@ -201,8 +202,88 @@ class VST3DDecoder(nn.Module):
 
 
 
-# 8, 768, 4, 8, 8
 
+
+
+
+class VSThalfDecoder(nn.Module):
+    """
+    For 128x128 input
+    Encoder output: (B, 768, T/2, 4, 4)
+    Output: (B, C, T, 128, 128)
+
+    Spatial: 4 → 8 → 16 → 32 → 64 → 128
+    Temporal: 2 → 4 → 8 → 8 → 8 → 8
+    """
+
+    def __init__(self, chnum_out=3, dropout=0.1):
+        super().__init__()
+
+        # 4 → 8
+        self.up1 = nn.Sequential(
+            nn.ConvTranspose3d(768, 384, kernel_size=3,
+                               stride=(2,2,2), padding=1, output_padding=1),
+            nn.BatchNorm3d(384),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
+        )
+
+        # 8 → 16
+        self.up2 = nn.Sequential(
+            nn.ConvTranspose3d(384, 192, kernel_size=3,
+                               stride=(2,2,2), padding=1, output_padding=1),
+            nn.BatchNorm3d(192),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
+        )
+
+        # 16 → 32
+        self.up3 = nn.Sequential(
+            nn.ConvTranspose3d(192, 96, kernel_size=3,
+                               stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+            nn.BatchNorm3d(96),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout3d(dropout),
+        )
+
+        # 🔥 refine at 32×32 (your idea)
+        self.refine = nn.Sequential(
+            nn.Conv3d(96, 96, kernel_size=3, padding=1),
+            nn.BatchNorm3d(96),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+        # 32 → 64
+        self.up4 = nn.Sequential(
+            nn.ConvTranspose3d(96, 48, kernel_size=3,
+                               stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+            nn.BatchNorm3d(48),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+        # 64 → 128
+        self.up5 = nn.Sequential(
+            nn.ConvTranspose3d(48, 32, kernel_size=3,
+                               stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+            nn.BatchNorm3d(32),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(32, chnum_out, kernel_size=3, padding=1),
+            nn.Tanh(),
+        )
+
+    def forward(self, x):
+        # x: (B, 768, T/2, 4, 4)
+
+        x = self.up1(x)   # (B, 384, T, 8, 8)
+        x = self.up2(x)   # (B, 192, T, 16, 16)
+        x = self.up3(x)   # (B, 96,  T, 32, 32)
+
+        x = self.refine(x)  # 🔥 important
+
+        x = self.up4(x)   # (B, 48, T, 64, 64)
+        x = self.up5(x)   # (B, C,  T, 128, 128)
+
+        return x
 
 
 
@@ -376,11 +457,9 @@ class DWTChannelAttention3D(nn.Module):
         # Attention only on high-freq bands (3 sub-bands = 3C)
         att_channels = channels * 3
         self.channel_att = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(1),
-            nn.Linear(att_channels, att_channels // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(att_channels // reduction, att_channels, bias=False),
+            nn.Conv2d(att_channels, att_channels // reduction, 1),
+            nn.ReLU(),
+            nn.Conv2d(att_channels // reduction, att_channels, 1),
             nn.Sigmoid()
         )
         
@@ -392,13 +471,15 @@ class DWTChannelAttention3D(nn.Module):
 
     def forward(self, x):
         B, C, D, H, W = x.shape
-        residual = x
+        
         
         output_frames = []
         for t in range(D):
             frame = x[:, :, t, :, :]  # (B, C, H, W)
             
             yl, yh = self.dwt(frame)
+            yl = yl.detach()
+
             lh = yh[0][:, :, 0]
             hl = yh[0][:, :, 1]
             hh = yh[0][:, :, 2]
@@ -407,22 +488,22 @@ class DWTChannelAttention3D(nn.Module):
             high_freq = torch.cat([lh, hl, hh], dim=1)  # (B, 3C, H', W')
             
             # Channel attention on high-freq only
-            att_weights = self.channel_att(high_freq).view(B, 3 * C, 1, 1)
+            att_weights = self.channel_att(high_freq)   # (B, 3C, H', W')
             high_freq = high_freq * att_weights
             
             lh_att, hl_att, hh_att = torch.chunk(high_freq, 3, dim=1)
             
-            # IDWT with zeroed LL — reconstruct only from high-freq
-            yl_zero = torch.zeros_like(yl)
+
+            yl_scaled = yl
             yh_att = [torch.stack([lh_att, hl_att, hh_att], dim=2)]
             
-            frame_out = self.idwt((yl_zero, yh_att))
+            frame_out = self.idwt((yl_scaled, yh_att))
             frame_out = frame_out[:, :, :H, :W]
             
             output_frames.append(frame_out)
         
         x_out = torch.stack(output_frames, dim=2)
-        x_out = self.fusion(x_out) + residual
+        x_out = self.fusion(x_out) 
         
         return x_out
 
@@ -534,7 +615,7 @@ class VST3d_wavnet(nn.Module):
         if self.use_skip and skips is not None:
             s1 = self.dwt_att1(skips[1])                    # DWT attention
             s1 = self._temporal_align(s1, x.shape[2])       # temporal align
-            x = self.fuse1(torch.cat([x, s1], dim=1))       # concat + fuse
+            x = self.fuse1(torch.cat([x, 0.5*s1], dim=1))       # concat + fuse
 
         # Stage 2: (384, T/2, 16, 16) → (192, T, 32, 32)
         x = self.up2(x)
@@ -543,11 +624,11 @@ class VST3d_wavnet(nn.Module):
         if self.use_skip and skips is not None:
             s0 = self.dwt_att0(skips[0])                    # DWT attention
             s0 = self._temporal_align(s0, x.shape[2])       # temporal align
-            x = self.fuse0(torch.cat([x, s0], dim=1))       # concat + fuse
+            x = self.fuse0(torch.cat([x, 0.5 * s0], dim=1))       # concat + fuse
 
         # Stage 3-5: spatial-only upsampling with DWT enhancement
         x = self.up3(x)                # (B,  96, T, 64, 64)
-        x = self.dwt_enhance_up3(x)    # sub-band conv refinement at 64x64
+        # x = self.dwt_enhance_up3(x)    # sub-band conv refinement at 64x64
         x = self.up4(x)                # (B,  48, T, 128, 128)
         # x = self.dwt_enhance_up4(x)    # sub-band conv refinement at 128x128
         x = self.up5(x)                # (B,   3, T, 256, 256)
