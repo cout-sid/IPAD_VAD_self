@@ -206,22 +206,22 @@ class VST3DDecoder(nn.Module):
 
 
 
+import torch
+import torch.nn as nn
+
 class VSThalfDecoder(nn.Module):
     """
     For 128x128 input
-    Encoder output: (B, 768, T/2, 4, 4)
-    Output: (B, C, T, 128, 128)
-
-    Spatial: 4 → 8 → 16 → 32 → 64 → 128
-    Temporal: 2 → 4 → 8 → 8 → 8 → 8
+    Input: (B, C, 2, 4, 4)
+    Output: (B, chnum_out, T, 128, 128)
     """
 
-    def __init__(self, chnum_out=3, dropout=0.1):
+    def __init__(self, in_channels=768, chnum_out=3, dropout=0.1):
         super().__init__()
 
         # 4 → 8
         self.up1 = nn.Sequential(
-            nn.ConvTranspose3d(768, 384, kernel_size=3,
+            nn.ConvTranspose3d(in_channels, 384, kernel_size=3,
                                stride=(2,2,2), padding=1, output_padding=1),
             nn.BatchNorm3d(384),
             nn.LeakyReLU(0.2, inplace=True),
@@ -240,31 +240,31 @@ class VSThalfDecoder(nn.Module):
         # 16 → 32
         self.up3 = nn.Sequential(
             nn.ConvTranspose3d(192, 96, kernel_size=3,
-                               stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+                               stride=(1,2,2), padding=1,
+                               output_padding=(0,1,1)),
             nn.BatchNorm3d(96),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Dropout3d(dropout),
-        )
-
-        # 🔥 refine at 32×32 (your idea)
-        self.refine = nn.Sequential(
-            nn.Conv3d(96, 96, kernel_size=3, padding=1),
-            nn.BatchNorm3d(96),
+            nn.Conv3d(96, 96, kernel_size=3, padding=1),   # 🔥 extra conv
             nn.LeakyReLU(0.2, inplace=True),
         )
 
         # 32 → 64
         self.up4 = nn.Sequential(
             nn.ConvTranspose3d(96, 48, kernel_size=3,
-                               stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+                               stride=(1,2,2), padding=1,
+                               output_padding=(0,1,1)),
             nn.BatchNorm3d(48),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv3d(48, 48, kernel_size=3, padding=1),   # 🔥 extra conv
             nn.LeakyReLU(0.2, inplace=True),
         )
 
         # 64 → 128
         self.up5 = nn.Sequential(
             nn.ConvTranspose3d(48, 32, kernel_size=3,
-                               stride=(1,2,2), padding=1, output_padding=(0,1,1)),
+                               stride=(1,2,2), padding=1,
+                               output_padding=(0,1,1)),
             nn.BatchNorm3d(32),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv3d(32, chnum_out, kernel_size=3, padding=1),
@@ -272,16 +272,13 @@ class VSThalfDecoder(nn.Module):
         )
 
     def forward(self, x):
-        # x: (B, 768, T/2, 4, 4)
+        # x: (B, C, 2, 4, 4)
 
-        x = self.up1(x)   # (B, 384, T, 8, 8)
-        x = self.up2(x)   # (B, 192, T, 16, 16)
-        x = self.up3(x)   # (B, 96,  T, 32, 32)
-
-        x = self.refine(x)  # 🔥 important
-
-        x = self.up4(x)   # (B, 48, T, 64, 64)
-        x = self.up5(x)   # (B, C,  T, 128, 128)
+        x = self.up1(x)   # (B, 384, 4, 8, 8)
+        x = self.up2(x)   # (B, 192, 8, 16, 16)
+        x = self.up3(x)   # (B, 96,  8, 32, 32)
+        x = self.up4(x)   # (B, 48,  8, 64, 64)
+        x = self.up5(x)   # (B, C,   8, 128, 128)
 
         return x
 
