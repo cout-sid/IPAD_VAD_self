@@ -17,10 +17,32 @@ from tqdm.notebook import tqdm
 import pandas as pd
 from pytorch_msssim import ssim
 
+from pytorch_wavelets import DWTForward
+
+class WaveletLoss(nn.Module):
+    """Penalizes differences in high-frequency DWT subbands (LH, HL, HH)."""
+    def __init__(self, wave='haar', J=1):
+        super().__init__()
+        self.dwt = DWTForward(J=J, wave=wave, mode='zero')
+
+    def forward(self, pred, target):
+        """
+        pred, target: (B, C, H, W)
+        Returns mean MSE over all high-frequency subbands.
+        """
+        _, Yh_pred = self.dwt(pred)    # Yh is a list of length J
+        _, Yh_target = self.dwt(target)  # each element: (B, C, 3, H/2^j, W/2^j)
+
+        loss = 0.0
+        for yh_p, yh_t in zip(Yh_pred, Yh_target):
+            loss += F.mse_loss(yh_p, yh_t)
+
+        return loss / len(Yh_pred)
+
 
 import argparse
 
-# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --epochs 2 --num_workers 0 --mem_dim 2000 --motion_mask --block_size 16 --mask_ratio 0.5
+# python train.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --epochs 2 --num_workers 0 --mem_dim 2000 --skip_val --motion_mask --block_size 16 --mask_ratio 0.5
 # python evaluate.py --dataset_type VAD --dataset_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video\R01" --model VST --model_dir "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\ipad_repo\exp\log_VST_weight_recon_256\model_02.pth" --num_workers 0 --mem_dim 2000 --motion_mask --block_size 16 --mask_ratio 0.5
 
 parser = argparse.ArgumentParser(description="STEAL Net")
@@ -58,6 +80,7 @@ parser.add_argument('--max_move', type=int, default=0, help='maximum movement in
 parser.add_argument('--print_all', action='store_true', help='print all reconstruction loss')
 parser.add_argument('--Entropy_Loss_Weight', type=float, default=0.00002, help='entropy loss weight')
 parser.add_argument('--Period_Loss_Weight', type=float, default=0.002, help='period loss weight')
+parser.add_argument('--Wavelet_Loss_Weight', type=float, default=2, help='wavelet loss weight')
 parser.add_argument('--num_frames', type=int, default=8, help='number of frames in a clip')
 parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memory bank')
 parser.add_argument('--all_frame_error', action='store_true', help='whether to use whole batch or only mid frame for error')
@@ -67,15 +90,18 @@ parser.add_argument('--block_size', type=int, default=32, help='block size for m
 parser.add_argument('--mask_ratio', type=float, default=0.5, help='fraction of static blocks to mask')
 parser.add_argument('--use_skip', action='store_true', help='enable DWT U-Net skip connections in decoder')
 parser.add_argument('--use_wavelet', action='store_true', help='enable wavelet in decoder')
+parser.add_argument('--skip_val', action='store_true', help='skip validation loop to save time')
 
 ##################
 
 args = parser.parse_args()
 entropy_loss_weight = args.Entropy_Loss_Weight
 period_loss_weight = args.Period_Loss_Weight
+wavelet_loss_weight = args.Wavelet_Loss_Weight
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 tr_entropy_loss_func = EntropyLossEncap().to(device)
+wavelet_loss_func = WaveletLoss(wave='haar', J=1).to(device)
 # assert 1 not in args.jump
 
 exp_dir = args.exp_dir
@@ -203,6 +229,7 @@ if args.start_epoch < args.epochs:
     epoch_entropy_list = []
     epoch_period_list = []
     epoch_ssim_list = []
+    epoch_wave_list = []
     epoch_val_list = []
 
     # model.eval()
@@ -218,6 +245,7 @@ if args.start_epoch < args.epochs:
         loss_entropy_epoch = 0
         loss_period_epoch = 0
         loss_ssim_epoch = 0
+        loss_wave_epoch = 0
 
 
 
@@ -289,9 +317,16 @@ if args.start_epoch < args.epochs:
 
                 loss_ssim = torch.tensor(0.0, device=device)
 
-            
+            # Wavelet loss on mid frame
+            B_wl, C_wl, T_wl, H_wl, W_wl = outputs.shape
+            if args.motion_mask:
+                wavelet_target = net_in_original[:, :, mid, :, :]
+            else:
+                wavelet_target = net_in[:, :, mid, :, :]
+            wavelet_loss = wavelet_loss_func(outputs[:, :, mid, :, :], wavelet_target)
 
-            loss = loss_recon + loss_entropy + loss_period
+            wavelet_loss = wavelet_loss_weight * wavelet_loss
+            loss = loss_recon + loss_entropy + loss_period + wavelet_loss
             
 
 
@@ -300,6 +335,7 @@ if args.start_epoch < args.epochs:
             loss_entropy_epoch += loss_entropy.item()
             loss_period_epoch += loss_period.item()
             loss_ssim_epoch+= loss_ssim.item()
+            loss_wave_epoch += wavelet_loss.item()
             total_loss_epoch += loss.item()
 
             losscounter += 1
@@ -312,7 +348,7 @@ if args.start_epoch < args.epochs:
             if j % 100 == 0 or args.print_all:
                 print("epoch {:d} iter {:d}/{:d}".format(epoch+1, j, len(train_batch)))
                 print('Loss: {:.6f}'.format(loss.item()))
-                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item()))
+                print('Loss: {:.6f}, Loss_recon: {:.6f}, Loss_entropy: {:.6f}, Loss_period: {:.6f}, Loss_wavelet: {:.6f}'.format(loss.item(),loss_recon.item(),loss_entropy.item(),loss_period.item(),wavelet_loss.item()))
                 print('Loss_ssim: {:.6f}'.format(loss_ssim.item()))
             
             # if j==5:
@@ -338,6 +374,7 @@ if args.start_epoch < args.epochs:
             mean_entropy = loss_entropy_epoch / losscounter
             mean_period = loss_period_epoch / losscounter
             mean_ssim_epoch = loss_ssim_epoch/losscounter
+            mean_wave = loss_wave_epoch / losscounter
 
             totalloss=total_loss_epoch/losscounter
 
@@ -345,6 +382,7 @@ if args.start_epoch < args.epochs:
             print("Overall loss per clip per epoch: {:.9f}".format(totalloss))
             print('MeanLoss: Entropy {:.9f}'.format(mean_entropy))
             print('MeanLoss: Period {:.9f}'.format(mean_period))
+            print('MeanLoss: Wavelet {:.9f}'.format(mean_wave))
             print('SSIMLoss:  {:.9f}'.format(mean_ssim_epoch))
 
 
@@ -353,6 +391,7 @@ if args.start_epoch < args.epochs:
             epoch_entropy_list.append(round(mean_entropy, 9))
             epoch_period_list.append(round(mean_period, 9))
             epoch_ssim_list.append(round(mean_ssim_epoch,9))
+            epoch_wave_list.append(round(mean_wave, 9))
             epoch_overall_list.append(round(totalloss, 9))
 
 
@@ -378,42 +417,35 @@ if args.start_epoch < args.epochs:
 
         epochs_ran = epoch + 1
 
-        model.eval()
-        val_loss_total = 0
-        val_count = 0
+        if args.skip_val:
+            epoch_val_list.append(0.2)
+        else:
+            model.eval()
+            val_loss_total = 0
+            val_count = 0
 
-        with torch.no_grad():
-            for val_imgs in val_batch:
-                val_in = val_imgs['batch'].to(device)
+            with torch.no_grad():
+                for val_imgs in val_batch:
+                    val_in = val_imgs['batch'].to(device)
 
-                # Apply same masking as training if motion_mask is enabled
-                if args.motion_mask:
-                    val_mask = val_imgs['motion_mask'].to(device)        # (B, H, W)
-                    val_mask_tube = val_mask.unsqueeze(1).unsqueeze(2)    # (B, 1, 1, H, W)
-                    val_in_original = val_in.clone()
-                    val_in = val_in * val_mask_tube
+                    val_out = model(val_in)
+                    val_recon = val_out['output']
 
-                val_out = model(val_in)
-                val_recon = val_out['output']
-
-                # Compute loss same way as training
-                if args.motion_mask:
-                    val_pixel_loss = loss_func_mse(val_recon, val_in_original)
-                else:
+                    # Compute loss same way as training
                     val_pixel_loss = loss_func_mse(val_recon, val_in)
 
-                if not args.all_frame_error:
-                    val_mid = val_pixel_loss.shape[2] // 2
-                    val_mse = val_pixel_loss[:, :, val_mid, :, :].mean().item()
-                else:
-                    val_mse = val_pixel_loss.mean().item()
+                    if not args.all_frame_error:
+                        val_mid = val_pixel_loss.shape[2] // 2
+                        val_mse = val_pixel_loss[:, :, val_mid, :, :].mean().item()
+                    else:
+                        val_mse = val_pixel_loss.mean().item()
 
-                val_loss_total += val_mse
-                val_count += 1
+                    val_loss_total += val_mse
+                    val_count += 1
 
-        val_loss_avg = val_loss_total / val_count
-        epoch_val_list.append(round(val_loss_avg, 9))
-        print(f'Validation Recon Loss: {val_loss_avg:.9f}')
+            val_loss_avg = val_loss_total / val_count
+            epoch_val_list.append(round(val_loss_avg, 9))
+            print(f'Validation Recon Loss: {val_loss_avg:.9f}')
 
         model.train()
             
@@ -509,6 +541,7 @@ loss_data = {
     'entropy_loss': epoch_entropy_list,
     'period_loss': epoch_period_list,
     'ssim_loss': epoch_ssim_list,
+    'wavelet_loss': epoch_wave_list,
     'overall_loss': epoch_overall_list,
     'val_loss': epoch_val_list
 }
@@ -527,6 +560,7 @@ plt.figure()
 plt.plot(epochs, epoch_mean_list, label="Reconstruction Loss")
 plt.plot(epochs, epoch_entropy_list, label="Entropy Loss (weighted)")
 plt.plot(epochs, epoch_period_list, label="Period Loss (weighted)")
+plt.plot(epochs, epoch_wave_list, label="Wavelet Loss")
 plt.plot(epochs, epoch_overall_list, label="Total Loss")
 
 plt.xlabel("Epoch")
