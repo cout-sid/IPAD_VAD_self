@@ -330,7 +330,8 @@ if args.start_epoch < args.epochs:
                 wavelet_target = net_in_original[:, :, mid, :, :]
             else:
                 wavelet_target = net_in[:, :, mid, :, :]
-            wavelet_loss = wavelet_loss_func(outputs[:, :, mid, :, :], wavelet_target)
+            # wavelet_loss = wavelet_loss_func(outputs[:, :, mid, :, :], wavelet_target)
+            wavelet_loss = torch.tensor(0.0, device=device)
 
             wavelet_loss = wavelet_loss_weight * wavelet_loss
             loss = loss_recon + loss_entropy + loss_period + wavelet_loss

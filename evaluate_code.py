@@ -189,8 +189,9 @@ toc = time.time()
 
 
 # ==========================================================
-# 4. Global Score Calculation & Dynamic Threshold
+# 4. Global Score Calculation & RAW Threshold (UPDATED)
 # ==========================================================
+
 all_psnrs = []
 all_gt = []
 
@@ -201,86 +202,54 @@ for vid in psnr_records.keys():
 all_psnrs = np.array(all_psnrs)
 all_gt = np.array(all_gt)
 
-# Globally normalize PSNR to anomaly scores (Lower PSNR = Higher anomaly)
+# ----------------------------------------------------------
+# 🔹 Compute global stats (useful for reference/debug)
+# ----------------------------------------------------------
 psnr_min, psnr_max = all_psnrs.min(), all_psnrs.max()
-global_anomaly_scores = 1.0 - (all_psnrs - psnr_min) / (psnr_max - psnr_min + 1e-8)
 
-# Calculate AUC
-fpr, tpr, roc_thresholds = roc_curve(all_gt, global_anomaly_scores)
+print(f"Global PSNR min: {psnr_min:.4f}")
+print(f"Global PSNR max: {psnr_max:.4f}")
+
+# ----------------------------------------------------------
+# 🔥 IMPORTANT: Use NEGATIVE PSNR for evaluation only
+# (because anomaly = low PSNR → high score needed)
+# ----------------------------------------------------------
+scores_for_eval = -all_psnrs
+
+# ----------------------------------------------------------
+# 🔹 AUC Calculation
+# ----------------------------------------------------------
+fpr, tpr, roc_thresholds = roc_curve(all_gt, scores_for_eval)
 accuracy = auc(fpr, tpr)
 print(f'\nAUC: {accuracy*100:.2f}%')
 
-# Calculate optimal threshold using Maximum F1-Score
-precision, recall, pr_thresholds = precision_recall_curve(all_gt, global_anomaly_scores)
+# ----------------------------------------------------------
+# 🔥 Find optimal threshold (F1-score based)
+# ----------------------------------------------------------
+precision, recall, pr_thresholds = precision_recall_curve(all_gt, scores_for_eval)
+
 f1_scores = (2 * precision * recall) / (precision + recall + 1e-8)
 optimal_idx_f1 = np.argmax(f1_scores)
-dynamic_threshold = pr_thresholds[optimal_idx_f1]
+
+# ⚠️ Convert back to PSNR domain
+raw_psnr_threshold = -pr_thresholds[optimal_idx_f1]
 max_f1 = f1_scores[optimal_idx_f1]
 
 print(f"Max F1-Score: {max_f1:.4f}")
-print(f"Calculated Dynamic Threshold (Global): {dynamic_threshold:.4f}\n")
+print(f"Calculated RAW PSNR Threshold: {raw_psnr_threshold:.4f}\n")
+
+# ----------------------------------------------------------
+# 💾 Save threshold info (VERY IMPORTANT)
+# ----------------------------------------------------------
+threshold_save_path = f"threshold_info_{model_filename}.npy"
+
+np.save(threshold_save_path, {
+    "psnr_threshold": raw_psnr_threshold,
+    "psnr_min": psnr_min,
+    "psnr_max": psnr_max
+})
+
+print(f"Threshold info saved to: {threshold_save_path}")
 
 if args.print_time:
     print(f'FPS: {len(test_batch)/(toc-tic):.2f}')
-
-
-# ==========================================================
-# 5. Summary Plotting (One per Video using GLOBAL scores)
-# ==========================================================
-offset = 0
-for vid_name in psnr_records.keys():
-    n_frames = len(psnr_records[vid_name])
-    
-    # Extract globally normalized scores for this specific video
-    vid_scores = global_anomaly_scores[offset : offset + n_frames]
-    vid_raw = np.array(psnr_records[vid_name])
-    vid_gt = np.array(gt_records[vid_name])
-    
-    # Shift offset forward for the next video
-    offset += n_frames
-    
-    # Calculate Rectangle segments for pink highlighting
-    rect_start, rect_end = [], []
-    active = False
-    for i, val in enumerate(vid_gt):
-        if val == 1 and not active:
-            rect_start.append(i)
-            active = True
-        elif val == 0 and active:
-            rect_end.append(i)
-            active = False
-    if active: rect_end.append(len(vid_gt)-1)
-
-    # --- Normalized anomaly score plot (using Global Norm & Threshold) ---
-    plt.figure(figsize=(12, 5))
-    plt.plot(vid_scores, label='Anomaly Score (Globally Normalized)', color='blue')
-    
-    # Plot the dynamic threshold line calculated earlier
-    plt.axhline(y=dynamic_threshold, color='red', linestyle='--', linewidth=1.5, label=f'Threshold = {dynamic_threshold:.2f}')
-
-    plt.ylim(-0.05, 1.05)
-    plt.title(f'Video: {vid_name} (Global Normalization)' + (' (motion masked)' if args.motion_mask else ''))
-    plt.xlabel('Frames')
-    plt.ylabel('Anomaly Score')
-    ax = plt.gca()
-    for rs, re in zip(rect_start, rect_end):
-        ax.add_patch(Rectangle((rs, 0), re-rs, 1, facecolor="pink", alpha=0.5))
-    plt.legend()
-    plt.savefig(os.path.join(save_plot_dir, f"summary_plot_{vid_name}.png"))
-    plt.close()
-
-    # --- Raw (unnormalized) PSNR plot ---
-    plt.figure(figsize=(12, 5))
-    plt.plot(vid_raw, label='Raw PSNR', color='green')
-    plt.title(f'Video: {vid_name} (raw PSNR)' + (' (motion masked)' if args.motion_mask else ''))
-    plt.xlabel('Frames')
-    plt.ylabel('PSNR')
-    ax = plt.gca()
-    y_min, y_max = vid_raw.min(), vid_raw.max()
-    for rs, re in zip(rect_start, rect_end):
-        ax.add_patch(Rectangle((rs, y_min), re-rs, y_max-y_min, facecolor="pink", alpha=0.5))
-    plt.legend()
-    plt.savefig(os.path.join(save_plot_dir, f"summary_plot_raw_{vid_name}.png"))
-    plt.close()
-
-print("Evaluation finished. Summary plots saved.")

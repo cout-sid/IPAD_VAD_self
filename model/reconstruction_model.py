@@ -466,22 +466,21 @@ class DWTChannelAttention3D(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
         )
 
+    
     def forward(self, x):
         B, C, D, H, W = x.shape
-        
         
         output_frames = []
         for t in range(D):
             frame = x[:, :, t, :, :]  # (B, C, H, W)
             
             yl, yh = self.dwt(frame)
-            yl = yl.detach()
-
-            lh = yh[0][:, :, 0]
-            hl = yh[0][:, :, 1]
-            hh = yh[0][:, :, 2]
             
-            # Only use high-freq bands, discard LL
+            lh = yh[:, :, 0]
+            hl = yh[:, :, 1]
+            hh = yh[:, :, 2]
+            
+            # Only use high-freq bands
             high_freq = torch.cat([lh, hl, hh], dim=1)  # (B, 3C, H', W')
             
             # Channel attention on high-freq only
@@ -490,11 +489,13 @@ class DWTChannelAttention3D(nn.Module):
             
             lh_att, hl_att, hh_att = torch.chunk(high_freq, 3, dim=1)
             
-
-            yl_scaled = yl
+            # Don'pass the low freq content to the model
+            yl_zeros = torch.zeros_like(yl) 
+            
             yh_att = [torch.stack([lh_att, hl_att, hh_att], dim=2)]
             
-            frame_out = self.idwt((yl_scaled, yh_att))
+            # Reconstruct using zeros for LL, and attended features for high-freq
+            frame_out = self.idwt((yl_zeros, yh_att))
             frame_out = frame_out[:, :, :H, :W]
             
             output_frames.append(frame_out)
