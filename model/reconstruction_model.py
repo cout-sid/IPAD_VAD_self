@@ -476,6 +476,7 @@ class DWTChannelAttention3D(nn.Module):
             
             yl, yh = self.dwt(frame)
             
+            yh=yh[0]
             lh = yh[:, :, 0]
             hl = yh[:, :, 1]
             hh = yh[:, :, 2]
