@@ -106,6 +106,8 @@ frame_counter = 0
 tic = time.time()
 for k, data_dict in enumerate(test_batch):
 
+
+
     imgs = data_dict['batch'].to(device)
     gt_label = data_dict['label'].item()
     
