@@ -288,27 +288,20 @@ class VSThalfDecoder(nn.Module):
 class DWTFeatureEnhance(nn.Module):
     """
     DWT sub-band convolution block for abstract feature maps.
-    
-    Instead of scalar-boosting high-freq bands (which amplifies noise
-    equally with useful patterns), this decomposes into LL/LH/HL/HH,
-    processes each band with its own depthwise-separable conv that can
-    learn band-specific spatial transformations, then recombines via IDWT.
-    
-    The LL path is a simple identity (structure preservation).
-    The high-freq paths learn to clean/sharpen within each orientation.
-    A learnable gate per sub-band controls how much correction is applied.
-    The whole block outputs a residual delta — so at init it's near-identity.
-    
+
+    Decomposes input into LL/LH/HL/HH, processes each high-freq band with
+    its own depthwise-separable conv, recombines via IDWT, then mixes
+    across time with a lightweight Conv3d. Outer residual skip ensures
+    near-identity behavior at init.
+
     Input/Output: (B, C, D, H, W) — shape unchanged.
     """
     def __init__(self, channels, wave='db4'):
         super().__init__()
         self.dwt = DWTForward(J=1, wave=wave, mode='zero')
         self.idwt = DWTInverse(wave=wave, mode='zero')
-        
-        # Per-sub-band depthwise-separable convs:
-        # depthwise (spatial patterns within each channel) + pointwise (cross-channel mixing)
-        # Lightweight: depthwise has C params per 3x3, pointwise has C*C params per 1x1
+
+        # Per-sub-band depthwise-separable convs
         self.conv_lh = nn.Sequential(
             nn.Conv2d(channels, channels, 3, padding=1, groups=channels, bias=False),
             nn.Conv2d(channels, channels, 1, bias=False),
@@ -327,116 +320,61 @@ class DWTFeatureEnhance(nn.Module):
             nn.BatchNorm2d(channels),
             nn.LeakyReLU(0.2, inplace=True),
         )
-        
-        # Per-sub-band gates: learnable scalars initialized near zero
-        # so the block starts as near-identity and gradually learns corrections
-        self.gate_lh = nn.Parameter(torch.zeros(1, channels, 1, 1))
-        self.gate_hl = nn.Parameter(torch.zeros(1, channels, 1, 1))
-        self.gate_hh = nn.Parameter(torch.zeros(1, channels, 1, 1))
 
-    def forward(self, x):
-        B, C, D, H, W = x.shape
-        
-        frames_out = []
-        for t in range(D):
-            frame = x[:, :, t, :, :]               # (B, C, H, W)
-            
-            yl, yh = self.dwt(frame)                # yl: (B,C,H',W')  yh: list
-            lh = yh[0][:, :, 0]                     # (B, C, H'', W'')
-            hl = yh[0][:, :, 1]
-            hh = yh[0][:, :, 2]
-            
-            # Process each high-freq band with its own conv path
-            # gate * conv(band) gives the learned correction; add to original band
-            lh = lh + self.gate_lh * self.conv_lh(lh)
-            hl = hl + self.gate_hl * self.conv_hl(hl)
-            hh = hh + self.gate_hh * self.conv_hh(hh)
-            
-            # LL band passes through unchanged — preserve structure
-            yh_proc = [torch.stack([lh, hl, hh], dim=2)]
-            frame_out = self.idwt((yl, yh_proc))
-            frame_out = frame_out[:, :, :H, :W]
-            
-            frames_out.append(frame_out)
-        
-        x_out = torch.stack(frames_out, dim=2)      # (B, C, D, H, W)
-        return x_out
+        # Per-sub-band gates: small nonzero init so convs receive gradient signal
+        self.gate_lh = nn.Parameter(torch.full((1, channels, 1, 1), 0.1))
+        self.gate_hl = nn.Parameter(torch.full((1, channels, 1, 1), 0.1))
+        self.gate_hh = nn.Parameter(torch.full((1, channels, 1, 1), 0.1))
 
-class FourierFeatureEnhance(nn.Module):
-    """
-    Fourier-based feature enhancement — comparison baseline against DWTFeatureEnhance.
-    
-    Applies FFT along spatial dims, learns to boost high-frequency components,
-    then reconstructs via iFFT. 
-    
-    Input/Output: (B, C, D, H, W) — shape unchanged.
-    """
-    def __init__(self, channels):
-        super().__init__()
-        self.channels = channels
-
-        # Predict high-freq boost from global average of feature map
-
-        self.boost_predictor = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),              # (B, C, 1, 1)
-            nn.Flatten(1),                         # (B, C)
-            nn.Linear(channels, channels // 4),
-            nn.ReLU(inplace=True),
-            nn.Linear(channels // 4, channels),   # one boost per channel
-            nn.Softplus(),                         # boost > 0
-        )
-
-        # same fusion as DWTFeatureEnhance for fair comparison
-        self.fusion = nn.Sequential(
-            nn.Conv3d(channels, channels, kernel_size=3, padding=1),
+        # Lightweight temporal mixing: depthwise 3D conv along time only.
+        # kernel (3,1,1) = each output frame sees ±1 neighbor frame.
+        # groups=channels keeps it cheap (C params per kernel position).
+        # Zero-init the final BN's weight/bias would break it; instead we
+        # rely on the outer residual skip to make this near-identity at init.
+        self.temporal_mix = nn.Sequential(
+            nn.Conv3d(channels, channels, kernel_size=(3, 1, 1),
+                      padding=(1, 0, 0), groups=channels, bias=False),
             nn.BatchNorm3d(channels),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
-        # threshold: frequency components above this (as fraction of max freq)
-        # are considered "high frequency"
-        self.hf_threshold = 0.4
+        # Learnable scalar gate for the whole block's contribution.
+        # Init small so the outer skip dominates at start.
+        self.block_gate = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, x):
+        residual = x  # outer skip
         B, C, D, H, W = x.shape
-        residual = x
 
-        frames_out = []
-        for t in range(D):
-            frame = x[:, :, t, :, :]          # (B, C, H, W)
+        # Batch frames into the spatial dim: (B, C, D, H, W) -> (B*D, C, H, W)
+        x_2d = x.permute(0, 2, 1, 3, 4).reshape(B * D, C, H, W)
 
-            # FFT — go to frequency domain (full complex spectrum)
-            fft = torch.fft.fft2(frame, norm='ortho')          # (B, C, H, W) complex
+        # One DWT call for all frames
+        yl, yh = self.dwt(x_2d)             # yl: (B*D, C, H', W')
+        lh = yh[0][:, :, 0]                 # (B*D, C, H'', W'')
+        hl = yh[0][:, :, 1]
+        hh = yh[0][:, :, 2]
 
-            # separate magnitude and phase
-            magnitude = fft.abs()              # (B, C, H, W)
-            phase     = fft.angle()            # (B, C, H, W)
+        # Per-band correction
+        lh = lh + self.gate_lh * self.conv_lh(lh)
+        hl = hl + self.gate_hl * self.conv_hl(hl)
+        hh = hh + self.gate_hh * self.conv_hh(hh)
 
-            # build high-freq mask
-            freq_h = torch.fft.fftfreq(H, device=x.device)    # (H,)
-            freq_w = torch.fft.fftfreq(W, device=x.device)    # (W,)
-            freq_grid = (freq_h.unsqueeze(1) ** 2 +
-                         freq_w.unsqueeze(0) ** 2).sqrt()      # (H, W)
-            hf_mask = (freq_grid > self.hf_threshold).float()  # binary
+        # Recombine — LL unchanged
+        yh_proc = [torch.stack([lh, hl, hh], dim=2)]
+        x_2d_out = self.idwt((yl, yh_proc))
+        x_2d_out = x_2d_out[:, :, :H, :W]
 
-            # predict boost from global average of magnitude (low-freq dominated)
-            # mag_pooled = magnitude.mean(dim=[-2, -1], keepdim=True)  # (B, C, 1, 1)
-            boosts = self.boost_predictor(magnitude)           # (B, C)
-            boosts = boosts.view(B, C, 1, 1)                   # (B, C, 1, 1)
+        # Reshape back: (B*D, C, H, W) -> (B, C, D, H, W)
+        x_out = x_2d_out.reshape(B, D, C, H, W).permute(0, 2, 1, 3, 4)
 
-            # boost high-freq magnitude
-            magnitude_boosted = magnitude * (1 + boosts * hf_mask)
+        # Temporal mixing across frames
+        x_out = self.temporal_mix(x_out)
+        print('\n----------USING dwt feature enhance layer-----------\n')
+        # Outer residual skip with learnable gate
+        return residual + self.block_gate * x_out
 
-            # reconstruct complex spectrum from boosted magnitude + original phase
-            fft_boosted = torch.polar(magnitude_boosted, phase)
 
-            # iFFT back to spatial domain, take real part to discard numerical noise
-            frame_out = torch.fft.ifft2(fft_boosted, norm='ortho').real  # (B, C, H, W)
-            frames_out.append(frame_out)
-
-        x_out = torch.stack(frames_out, dim=2)   # (B, C, D, H, W)
-        x_out = self.fusion(x_out) + residual
-        return x_out
 
 class DWTChannelAttention3D(nn.Module):
     """
@@ -621,14 +559,15 @@ class VST3d_wavnet(nn.Module):
 
         # Skip from encoder layer 0 (192-ch)
         if self.use_skip and skips is not None:
+            print('\n----------USING SKIP-----------\n')
             s0 = self.dwt_att0(skips[0])                    # DWT attention
             s0 = self._temporal_align(s0, x.shape[2])       # temporal align
             x = self.fuse0(torch.cat([x, 0.5 * s0], dim=1))       # concat + fuse
 
         # Stage 3-5: spatial-only upsampling with DWT enhancement
         x = self.up3(x)                # (B,  96, T, 64, 64)
-        # x = self.dwt_enhance_up3(x)    # sub-band conv refinement at 64x64
+        x = self.dwt_enhance_up3(x)    # sub-band conv refinement at 64x64
         x = self.up4(x)                # (B,  48, T, 128, 128)
-        # x = self.dwt_enhance_up4(x)    # sub-band conv refinement at 128x128
+        x = self.dwt_enhance_up4(x)    # sub-band conv refinement at 128x128
         x = self.up5(x)                # (B,   3, T, 256, 256)
         return x

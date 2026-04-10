@@ -183,7 +183,10 @@ class Reconstruction3DDataLoader(data.Dataset):
                 raw_frames.append(image)  # (H, W, 3) in [-1, 1]
             
             if self.transform is not None:
-                batch.append(self.transform(image))
+                # print("Before transform:", image.min(), image.max())
+                img_t = self.transform(image)
+                batch.append(img_t)
+                # print("after transform:", img_t.min(), img_t.max())   ---> range stays same [-1,1]
 
         img = OrderedDict()
         img['batch'] = np.stack(batch, axis=1)

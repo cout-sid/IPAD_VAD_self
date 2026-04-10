@@ -13,6 +13,7 @@ from model.autoencoder import *
 from model.video_swin_transformer import *
 from model.utils import np_load_frame, compute_motion_mask
 from utils import psnr, anomaly_score_list, AUC
+from torchvision import transforms
 
 # -------------------------------
 # ARGUMENTS
@@ -50,6 +51,7 @@ parser.add_argument('--save_dir', type=str, default='batch_inference_results',
                     help='directory to save plots and results')
 
 args = parser.parse_args()
+transform = transforms.ToTensor()
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -91,6 +93,7 @@ model.eval()
 
 loss_func = nn.MSELoss(reduction='none')
 
+counter = 1
 # -------------------------------
 # Helper functions
 # -------------------------------
@@ -104,8 +107,14 @@ def load_clip(frame_paths, start_idx):
         if args.motion_mask:
             raw_frames.append(img)
 
-        img = torch.from_numpy(img).permute(2, 0, 1)
+        # img = torch.from_numpy(img).permute(2, 0, 1)
+        img = transform(img) 
         batch.append(img)
+        # if counter==1:
+        # print('\n----------check image range----------------------------------------------\n')
+        # print("RANGE:", img.min().item(), img.max().item())
+        # print('\n----------check image range----------------------------------------------\n')
+            # counter+=1
 
     batch = torch.stack(batch, dim=1)
 

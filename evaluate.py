@@ -48,7 +48,7 @@ else:
 if torch.cuda.is_available():
     model = nn.DataParallel(model).to(device)
 
-model_dict = torch.load(args.model_dir, weights_only=False)
+model_dict = torch.load(args.model_dir,map_location=device, weights_only=False)
 
 try:
     model.load_state_dict(model_dict['model'].state_dict(),strict=False)

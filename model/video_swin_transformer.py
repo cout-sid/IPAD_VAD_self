@@ -51,9 +51,7 @@ class VST(torch.nn.Module):
             feature = self.transformer_encoder(x)
             skips = None
 
-        # feature gate
-        feature = self.dwt_gate(feature)
-        # Period prediction
+
         recon_index = self.period(feature)
 
         # Memory module
