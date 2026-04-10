@@ -22,6 +22,8 @@ from model import EntropyLossEncap
 # --- ADDED FOR DYNAMIC THRESHOLD CALCULATION ---
 from sklearn.metrics import roc_curve, auc, precision_recall_curve
 
+
+
 parser = argparse.ArgumentParser(description="STEAL Net Evaluation")
 parser.add_argument('--model', type=str, default='VST', choices=['VST', 'conAE'])
 parser.add_argument('--h', type=int, default=256)
@@ -224,15 +226,17 @@ accuracy = auc(fpr, tpr)
 print(f'\nAUC: {accuracy*100:.2f}%')
 
 # ----------------------------------------------------------
-# 🔥 Find optimal threshold (F1-score based)
+#Find optimal threshold (F1-score based)
 # ----------------------------------------------------------
 precision, recall, pr_thresholds = precision_recall_curve(all_gt, scores_for_eval)
 
 f1_scores = (2 * precision * recall) / (precision + recall + 1e-8)
 optimal_idx_f1 = np.argmax(f1_scores)
 
-# ⚠️ Convert back to PSNR domain
+# Convert back to PSNR domain
+
 raw_psnr_threshold = -pr_thresholds[optimal_idx_f1]
+# raw_psnr_threshold is +ve now
 max_f1 = f1_scores[optimal_idx_f1]
 
 print(f"Max F1-Score: {max_f1:.4f}")

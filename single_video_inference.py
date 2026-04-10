@@ -1,3 +1,4 @@
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -9,28 +10,29 @@ import argparse
 
 from model.autoencoder import *
 from model.video_swin_transformer import *
-from utils import np_load_frame, compute_motion_mask  # 🔥 IMPORTANT
+from model.utils import np_load_frame, compute_motion_mask
 
 # -------------------------------
 # 🔧 ARGUMENTS
 # -------------------------------
 parser = argparse.ArgumentParser()
 
+# python single_video_inference.py --video_folder "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video_128\ipad_half_video\R02\testing\frames\04" --label_folder "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\IPAD_dataset\ipad_half_video_128\ipad_half_video\R02\test_label" --model_path "C:\Users\sidni\OwnDrive\ECE\MTP\Surveillance\Industrial\IPAD_work\downloaded_models\model_final R2_waveletLoss.pth" --mem_dim 2000 --num_frames 8
+
 parser.add_argument('--video_folder', type=str, required=True)
+parser.add_argument('--label_folder', type=str, required=True)  
 parser.add_argument('--model_path', type=str, required=True)
-parser.add_argument('--model_filename', type=str, required=True)
+
 
 parser.add_argument('--num_frames', type=int, default=8)
 parser.add_argument('--h', type=int, default=256)
 parser.add_argument('--w', type=int, default=256)
 parser.add_argument('--mem_dim', type=int, default=2000)
 
-# Motion mask args (same as training)
 parser.add_argument('--motion_mask', action='store_true')
 parser.add_argument('--block_size', type=int, default=16)
 parser.add_argument('--mask_ratio', type=float, default=0.5)
 
-# VST args (CRITICAL)
 parser.add_argument('--use_skip', action='store_true')
 parser.add_argument('--use_wavelet', action='store_true')
 
@@ -41,14 +43,15 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # -------------------------------
 # 🔹 Load threshold
 # -------------------------------
-threshold_path = f"threshold_info_{args.model_filename}.npy"
+model_filename = os.path.splitext(os.path.basename(args.model_path))[0]
+threshold_path = f"threshold_info_{model_filename}.npy"
 threshold_data = np.load(threshold_path, allow_pickle=True).item()
-PSNR_THRESHOLD = threshold_data["psnr_threshold"]
+psnr_threshold = threshold_data["psnr_threshold"]
 
-print(f"Loaded PSNR Threshold: {PSNR_THRESHOLD:.4f}")
+print(f"Loaded PSNR Threshold: {psnr_threshold:.4f}")
 
 # -------------------------------
-# 🔹 Load model (MATCH TRAINING)
+# 🔹 Load model
 # -------------------------------
 model = VST(
     mem_dim=args.mem_dim,
@@ -69,24 +72,46 @@ model.eval()
 loss_func = nn.MSELoss(reduction='none')
 
 # -------------------------------
-# 🔹 Load frames (TRAINING STYLE)
+# 🔹 Load frames
 # -------------------------------
 frame_paths = sorted(glob.glob(os.path.join(args.video_folder, "*.jpg")))
 
+# -------------------------------
+# 🔹 Load labels (same as loader)
+# -------------------------------
+video_name = os.path.basename(args.video_folder)
+label_file = f"{int(video_name):03d}.npy"
+label_path = os.path.join(args.label_folder, label_file)
+
+if not os.path.exists(label_path):
+    raise ValueError(f"Label file not found: {label_path}")
+
+gt_labels = np.load(label_path)
+
+# CRITICAL FIX: sync lengths
+min_len = min(len(frame_paths), len(gt_labels))
+frame_paths = frame_paths[:min_len]
+gt_labels = gt_labels[:min_len]
+
+print(f"Synced frames & labels length: {min_len}")
+
+# -------------------------------
+# 🔹 Load clip
+# -------------------------------
 def load_clip(start_idx):
     batch = []
     raw_frames = []
 
     for i in range(start_idx, start_idx + args.num_frames):
-        img = np_load_frame(frame_paths[i], args.h, args.w)  # 🔥 SAME AS TRAIN
+        img = np_load_frame(frame_paths[i], args.h, args.w)
 
         if args.motion_mask:
             raw_frames.append(img)
 
-        img = torch.from_numpy(img).permute(2, 0, 1)  # (H,W,C) → (C,H,W)
+        img = torch.from_numpy(img).permute(2, 0, 1)
         batch.append(img)
 
-    batch = torch.stack(batch, dim=1)  # (C, T, H, W)
+    batch = torch.stack(batch, dim=1)
 
     if args.motion_mask:
         mid_idx = args.num_frames // 2
@@ -97,11 +122,10 @@ def load_clip(start_idx):
             args.mask_ratio
         )
         mask = torch.from_numpy(mask).to(DEVICE)
+        mask = mask.unsqueeze(0).unsqueeze(0)
+        batch = batch * mask
 
-        mask = mask.unsqueeze(0).unsqueeze(0)  # (1,1,H,W)
-        batch = batch * mask  # apply mask like training
-
-    return batch.unsqueeze(0)  # (1,C,T,H,W)
+    return batch.unsqueeze(0)
 
 # -------------------------------
 # 🔹 PSNR
@@ -114,9 +138,13 @@ def psnr(mse):
 # -------------------------------
 psnr_values = []
 predictions = []
+gt_list = []
+
+middle_offset = args.num_frames // 2
 
 with torch.no_grad():
     for i in range(len(frame_paths) - args.num_frames + 1):
+
         clip = load_clip(i).to(DEVICE)
 
         outputs = model(clip)
@@ -134,8 +162,16 @@ with torch.no_grad():
 
         psnr_values.append(psnr_val)
 
-        is_anomaly = psnr_val < PSNR_THRESHOLD
+        # 🔥 Prediction
+        is_anomaly = psnr_val < psnr_threshold
         predictions.append(is_anomaly)
+
+        # 🔥 Ground truth (aligned like loader)
+        label_idx = i + middle_offset
+        safe_idx = min(label_idx, len(gt_labels) - 1)
+        gt = gt_labels[safe_idx]
+
+        gt_list.append(gt)
 
         print(f"Frame {i:04d} | PSNR: {psnr_val:.2f} | {'ANOMALY' if is_anomaly else 'NORMAL'}")
 
@@ -143,19 +179,26 @@ with torch.no_grad():
 # 🔹 Plot
 # -------------------------------
 plt.figure(figsize=(12, 5))
+
 plt.plot(psnr_values, label="PSNR", color="green")
-plt.axhline(y=PSNR_THRESHOLD, color="red", linestyle="--", label="Threshold")
+plt.axhline(y=psnr_threshold, color="red", linestyle="--", label="Threshold")
+
+#  Ground truth
+for i, val in enumerate(gt_list):
+    if val == 1:
+        plt.axvspan(i, i+1, color='red', alpha=0.25)
+
+#  Predictions
+for i, val in enumerate(predictions):
+    if val:
+        plt.axvspan(i, i+1, color='orange', alpha=0.25)
 
 plt.xlabel("Frame")
 plt.ylabel("PSNR")
-plt.title("Single Video Anomaly Detection")
-
-for i, val in enumerate(predictions):
-    if val:
-        plt.axvspan(i, i+1, color='red', alpha=0.2)
-
+plt.title("GT (Red) vs Prediction (Orange)")
 plt.legend()
-plt.savefig("single_video_result.png")
+plt.savefig(f"single_video_{video_name}.png")
 plt.show()
 
-print("\n✅ Done. Plot saved as single_video_result.png")
+print("\n Done. Plot saved as single_video_result.png")
+
