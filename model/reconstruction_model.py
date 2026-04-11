@@ -370,7 +370,7 @@ class DWTFeatureEnhance(nn.Module):
 
         # Temporal mixing across frames
         x_out = self.temporal_mix(x_out)
-        print('\n----------USING dwt feature enhance layer-----------\n')
+        # print('\n----------USING dwt feature enhance layer-----------\n')
         # Outer residual skip with learnable gate
         return residual + self.block_gate * x_out
 
@@ -559,7 +559,7 @@ class VST3d_wavnet(nn.Module):
 
         # Skip from encoder layer 0 (192-ch)
         if self.use_skip and skips is not None:
-            print('\n----------USING SKIP-----------\n')
+            # print('\n----------USING SKIP-----------\n')
             s0 = self.dwt_att0(skips[0])                    # DWT attention
             s0 = self._temporal_align(s0, x.shape[2])       # temporal align
             x = self.fuse0(torch.cat([x, 0.5 * s0], dim=1))       # concat + fuse
