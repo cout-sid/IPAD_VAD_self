@@ -81,19 +81,35 @@ model = VST(
     use_skip=args.use_skip
 )
 
-model_dict = torch.load(args.model_path, map_location=DEVICE, weights_only=False)
+# model_dict = torch.load(args.model_path, map_location=DEVICE, weights_only=False)
 
-try:
-    model.load_state_dict(model_dict['model'].state_dict(), strict=False)
-except:
-    model.load_state_dict(model_dict['model'], strict=False)
+# try:
+#     model.load_state_dict(model_dict['model'].state_dict(), strict=False)
+# except:
+#     model.load_state_dict(model_dict['model'], strict=False)
 
-model = model.to(DEVICE)
-model.eval()
+# model = model.to(DEVICE)
+# model.eval()
+
+
+ckpt = torch.load(args.model_path, map_location=DEVICE, weights_only=False)
+state = ckpt['model'].state_dict() if hasattr(ckpt['model'], 'state_dict') else ckpt['model']
+
+# Strip DataParallel's "module." prefix if present
+new_state = OrderedDict()
+for k, v in state.items():
+    new_state[k[7:] if k.startswith('module.') else k] = v
+
+missing, unexpected = model.load_state_dict(new_state, strict=False)
+print(f"[load] missing={len(missing)} unexpected={len(unexpected)}")
+assert len(missing) == 0 and len(unexpected) == 0, \
+    f"Checkpoint load mismatch!\nmissing: {missing[:5]}\nunexpected: {unexpected[:5]}"
+
+model = model.to(DEVICE).eval()
 
 loss_func = nn.MSELoss(reduction='none')
 
-counter = 1
+# counter = 1
 # -------------------------------
 # Helper functions
 # -------------------------------
