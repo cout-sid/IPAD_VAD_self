@@ -6,6 +6,7 @@ import cv2
 import torch.utils.data as data
 import random
 from PIL import Image
+import torch
 
 
 rng = np.random.RandomState(2020)
@@ -184,7 +185,8 @@ class Reconstruction3DDataLoader(data.Dataset):
             
             if self.transform is not None:
                 # print("Before transform:", image.min(), image.max())
-                img_t = self.transform(image)
+                # img_t = self.transform(image)
+                img_t = torch.from_numpy(image).permute(2, 0, 1).float()
                 batch.append(img_t)
                 # print("after transform:", img_t.min(), img_t.max())   ---> range stays same [-1,1]
 
@@ -266,7 +268,9 @@ class TestDataLoader(Reconstruction3DDataLoader):
                 raw_frames.append(image)
             
             if self.transform is not None:
-                batch.append(self.transform(image))
+                # batch.append(self.transform(image))
+                img_t = torch.from_numpy(image).permute(2, 0, 1).float()    
+                batch.append(img_t)
 
         # Extract Middle Label
         middle_offset = self._num_frames // 2

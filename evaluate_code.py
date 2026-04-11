@@ -38,7 +38,7 @@ parser.add_argument('--mem_dim', type=int, default=2000, help='dimension of memo
 
 # Motion mask arguments
 parser.add_argument('--motion_mask', action='store_true', help='enable motion mask for evaluation')
-parser.add_argument('--block_size', type=int, default=16, help='block size for motion mask')
+parser.add_argument('--block_size', type=int, default=32, help='block size for motion mask')
 parser.add_argument('--mask_ratio', type=float, default=0.8, help='fraction of static blocks to mask out')
 parser.add_argument('--use_skip', action='store_true', help='enable DWT U-Net skip connections in decoder')
 parser.add_argument('--use_wavelet', action='store_true', help='enable wavelet in decoder')

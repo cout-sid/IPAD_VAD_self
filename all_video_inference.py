@@ -51,7 +51,7 @@ parser.add_argument('--save_dir', type=str, default='batch_inference_results',
                     help='directory to save plots and results')
 
 args = parser.parse_args()
-transform = transforms.ToTensor()
+# transform = transforms.ToTensor()
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -108,7 +108,8 @@ def load_clip(frame_paths, start_idx):
             raw_frames.append(img)
 
         # img = torch.from_numpy(img).permute(2, 0, 1)
-        img = transform(img) 
+        # img = transform(img) 
+        img = torch.from_numpy(img).permute(2, 0, 1).float()
         batch.append(img)
         # if counter==1:
         # print('\n----------check image range----------------------------------------------\n')
@@ -268,18 +269,18 @@ for vf in video_folders:
 # -------------------------------
 # Global AUC
 # -------------------------------
-if len(all_psnrs) > 0:
-    anomaly_scores = anomaly_score_list(all_psnrs)
-    auc = AUC(anomaly_scores, np.expand_dims(1 - np.array(all_gt), 0))
-    print(f"\nGlobal AUC across all videos: {auc * 100:.2f}%")
+# if len(all_psnrs) > 0:
+#     anomaly_scores = anomaly_score_list(all_psnrs)
+#     auc = AUC(anomaly_scores, np.expand_dims(1 - np.array(all_gt), 0))
+#     print(f"\nGlobal AUC across all videos: {auc * 100:.2f}%")
 
-    # Per-video AUC
-    print("\nPer-video AUC:")
-    for vname, vdata in video_results.items():
-        v_scores = anomaly_score_list(vdata['psnr'])
-        v_auc = AUC(v_scores, np.expand_dims(1 - np.array(vdata['gt']), 0))
-        print(f"  {vname}: {v_auc * 100:.2f}%")
-else:
-    print("No results to compute AUC.")
+#     # Per-video AUC
+#     print("\nPer-video AUC:")
+#     for vname, vdata in video_results.items():
+#         v_scores = anomaly_score_list(vdata['psnr'])
+#         v_auc = AUC(v_scores, np.expand_dims(1 - np.array(vdata['gt']), 0))
+#         print(f"  {vname}: {v_auc * 100:.2f}%")
+# else:
+#     print("No results to compute AUC.")
 
 print(f"\nAll plots saved to {save_dir}/")
