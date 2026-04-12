@@ -6,6 +6,8 @@ import cv2
 import glob
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib.collections import LineCollection
+
 import argparse
 from collections import OrderedDict
 
@@ -14,6 +16,8 @@ from model.video_swin_transformer import *
 from model.utils import np_load_frame, compute_motion_mask
 from utils import psnr, anomaly_score_list, AUC
 from torchvision import transforms
+
+
 
 # -------------------------------
 # ARGUMENTS
@@ -190,51 +194,115 @@ def run_single_video(video_folder, label_path):
     return psnr_values, gt_list
 
 
-def plot_video_result(video_name, psnr_values, gt_list, threshold):
-    """Save normalized anomaly score plot and raw PSNR plot for one video."""
-    psnr_arr = np.array(psnr_values)
-    gt_arr = np.array(gt_list)
-    predictions = psnr_arr < threshold
+# def plot_video_result(video_name, psnr_values, gt_list, threshold):
+#     """Save normalized anomaly score plot and raw PSNR plot for one video."""
+#     psnr_arr = np.array(psnr_values)
+#     gt_arr = np.array(gt_list)
+#     predictions = psnr_arr < threshold
 
-    # Find anomaly GT segments for pink highlighting
+#     # Find anomaly GT segments for pink highlighting
+#     rect_start, rect_end = [], []
+#     active = False
+#     for i, val in enumerate(gt_arr):
+#         if val == 1 and not active:
+#             rect_start.append(i)
+#             active = True
+#         elif val == 0 and active:
+#             rect_end.append(i)
+#             active = False
+#     if active:
+#         rect_end.append(len(gt_arr) - 1)
+
+#     # --- Raw PSNR plot with threshold ---
+#     plt.figure(figsize=(12, 5))
+#     plt.plot(psnr_arr, label='PSNR', color='green')
+#     plt.axhline(y=threshold, color='red', linestyle='--', label=f'Threshold ({threshold:.2f})')
+
+#     ax = plt.gca()
+#     y_min, y_max = psnr_arr.min(), psnr_arr.max()
+#     margin = (y_max - y_min) * 0.05
+#     for rs, re in zip(rect_start, rect_end):
+#         ax.add_patch(Rectangle((rs, y_min - margin), re - rs,
+#                                 y_max - y_min + 2 * margin,
+#                                 facecolor='pink', alpha=0.4))
+
+#     # Prediction overlay
+#     for i, pred in enumerate(predictions):
+#         if pred:
+#             plt.axvspan(i, i + 1, color='orange', alpha=0.15)
+
+#     plt.xlabel('Frame')
+#     plt.ylabel('PSNR')
+#     plt.title(f'Video: {video_name} — GT (pink) vs Prediction (orange)')
+#     plt.legend()
+#     plt.tight_layout()
+#     plt.savefig(os.path.join(save_dir, f"single_video_{video_name}.png"), dpi=150)
+#     plt.close()
+
+
+
+def plot_video_result(video_name, psnr_values, gt_list, threshold):
+    """GT shown as pink background; PSNR line is green above threshold, red below."""
+    psnr_arr = np.array(psnr_values, dtype=float)
+    gt_arr = np.array(gt_list)
+    x = np.arange(len(psnr_arr))
+
+    # --- Find GT anomaly segments for pink background ---
     rect_start, rect_end = [], []
     active = False
     for i, val in enumerate(gt_arr):
         if val == 1 and not active:
-            rect_start.append(i)
-            active = True
+            rect_start.append(i); active = True
         elif val == 0 and active:
-            rect_end.append(i)
-            active = False
+            rect_end.append(i); active = False
     if active:
-        rect_end.append(len(gt_arr) - 1)
+        rect_end.append(len(gt_arr))
 
-    # --- Raw PSNR plot with threshold ---
-    plt.figure(figsize=(12, 5))
-    plt.plot(psnr_arr, label='PSNR', color='green')
-    plt.axhline(y=threshold, color='red', linestyle='--', label=f'Threshold ({threshold:.2f})')
+    fig, ax = plt.subplots(figsize=(12, 5))
 
-    ax = plt.gca()
+    # --- Pink GT background (drawn first, stays fully visible) ---
     y_min, y_max = psnr_arr.min(), psnr_arr.max()
     margin = (y_max - y_min) * 0.05
     for rs, re in zip(rect_start, rect_end):
-        ax.add_patch(Rectangle((rs, y_min - margin), re - rs,
-                                y_max - y_min + 2 * margin,
-                                facecolor='pink', alpha=0.4))
+        ax.add_patch(Rectangle(
+            (rs, y_min - margin), re - rs, y_max - y_min + 2 * margin,
+            facecolor='deeppink', alpha=0.30, edgecolor='none', zorder=1,
+            label='_nolegend_'
+        ))
 
-    # Prediction overlay
-    for i, pred in enumerate(predictions):
-        if pred:
-            plt.axvspan(i, i + 1, color='orange', alpha=0.15)
+    # --- Build a multi-colored PSNR line via LineCollection ---
+    # Each segment is colored by whether its left endpoint is below threshold.
+    points = np.array([x, psnr_arr]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    below = psnr_arr[:-1] < threshold  # prediction = anomaly
+    colors = np.where(below, '#d62728', '#2ca02c')  # red / green
+    lc = LineCollection(segments, colors=colors, linewidths=1.8, zorder=3)
+    ax.add_collection(lc)
 
-    plt.xlabel('Frame')
-    plt.ylabel('PSNR')
-    plt.title(f'Video: {video_name} — GT (pink) vs Prediction (orange)')
-    plt.legend()
+    # --- Threshold line ---
+    ax.axhline(y=threshold, color='black', linestyle='--', linewidth=1.2,
+               label=f'Threshold ({threshold:.2f})', zorder=2)
+
+    # --- Proxy handles for a clean legend ---
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    legend_handles = [
+        Line2D([0], [0], color='#2ca02c', lw=2, label='PSNR (pred: normal)'),
+        Line2D([0], [0], color='#d62728', lw=2, label='PSNR (pred: anomaly)'),
+        Line2D([0], [0], color='black', lw=1.2, ls='--',
+               label=f'Threshold ({threshold:.2f})'),
+        Patch(facecolor='deeppink', alpha=0.30, label='GT anomaly'),
+    ]
+
+    ax.set_xlim(0, len(psnr_arr) - 1)
+    ax.set_ylim(y_min - margin, y_max + margin)
+    ax.set_xlabel('Frame')
+    ax.set_ylabel('PSNR')
+    ax.set_title(f'Video: {video_name} — GT (pink) vs Prediction (line color)')
+    ax.legend(handles=legend_handles, loc='lower right', framealpha=0.9)
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, f"single_video_{video_name}.png"), dpi=150)
     plt.close()
-
 
 # -------------------------------
 # Discover all video folders
